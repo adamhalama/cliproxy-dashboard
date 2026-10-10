@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import codexIcon from '@/assets/icons/codex.svg';
 import claudeIcon from '@/assets/icons/claude.svg';
 import { copyToClipboard } from '@/utils/clipboard';
 import { dashboardApi } from './api';
 import { checkLoginTarget } from './login';
+import { ClaudeUsage } from './ClaudeUsage';
 import type { Account, DashboardStatus, LoginResult, QuotaWindow } from './types';
 import styles from './TailnetApp.module.scss';
 
@@ -272,7 +273,7 @@ function QuotaMeter({
         {blocked
           ? 'Unavailable · sign-in required'
           : value === null
-            ? 'Not reported by scheduler'
+            ? 'Not reported'
             : timeUntil(window?.resetAt ?? null, now)}
       </div>
       {state === 'stale' && !blocked && <span className={styles.staleLabel}>Stale snapshot</span>}
@@ -927,55 +928,57 @@ export function TailnetApp() {
                 <span>Quota remaining</span>
               </div>
               {group.map((account) => (
-                <article
-                  key={account.id}
-                  className={`${styles.ledgerRow} ${account.blocked ? styles.blockedRow : ''}`}
-                >
-                  <div>
-                    <AccountIdentity account={account} />
-                    <div className={styles.checkedAt} title={dateLabel(account.lastCheckedAt)}>
-                      {account.lastCheckedAt
-                        ? `Checked ${age(account.lastCheckedAt, now).toLowerCase()}`
-                        : 'Observation time unavailable'}
-                    </div>
-                  </div>
-                  <QuotaMeter
-                    kind="weekly"
-                    window={account.windows.find((window) => window.kind === 'weekly')}
-                    now={now}
-                    blocked={account.blocked}
-                  />
-                  <QuotaMeter
-                    kind="five_hour"
-                    window={account.windows.find((window) => window.kind === 'five_hour')}
-                    now={now}
-                    blocked={account.blocked}
-                  />
-                  <div className={styles.priorityCell}>
-                    <span>Priority</span>
-                    <strong>{account.provider === 'codex' ? account.priority : '—'}</strong>
-                    <small>
-                      {account.provider === 'claude'
-                        ? 'Not applicable'
-                        : account.inRoster
-                          ? 'In rotation'
-                          : 'Outside roster'}
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    className={styles.quietButton}
-                    onClick={() =>
-                      account.blocked || account.provider === 'claude'
-                        ? reconnect(account)
-                        : setEditing(account)
-                    }
-                    aria-label={`${account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'} ${account.alias || account.maskedIdentity}`}
+                <Fragment key={account.id}>
+                  <article
+                    className={`${styles.ledgerRow} ${account.blocked ? styles.blockedRow : ''}`}
                   >
-                    {account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'}
-                    <Icon name="chevron" />
-                  </button>
-                </article>
+                    <div>
+                      <AccountIdentity account={account} />
+                      <div className={styles.checkedAt} title={dateLabel(account.lastCheckedAt)}>
+                        {account.lastCheckedAt
+                          ? `Checked ${age(account.lastCheckedAt, now).toLowerCase()}`
+                          : 'Observation time unavailable'}
+                      </div>
+                    </div>
+                    <QuotaMeter
+                      kind="weekly"
+                      window={account.windows.find((window) => window.kind === 'weekly')}
+                      now={now}
+                      blocked={account.blocked}
+                    />
+                    <QuotaMeter
+                      kind="five_hour"
+                      window={account.windows.find((window) => window.kind === 'five_hour')}
+                      now={now}
+                      blocked={account.blocked}
+                    />
+                    <div className={styles.priorityCell}>
+                      <span>Priority</span>
+                      <strong>{account.provider === 'codex' ? account.priority : '—'}</strong>
+                      <small>
+                        {account.provider === 'claude'
+                          ? 'Not applicable'
+                          : account.inRoster
+                            ? 'In rotation'
+                            : 'Outside roster'}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.quietButton}
+                      onClick={() =>
+                        account.blocked || account.provider === 'claude'
+                          ? reconnect(account)
+                          : setEditing(account)
+                      }
+                      aria-label={`${account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'} ${account.alias || account.maskedIdentity}`}
+                    >
+                      {account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'}
+                      <Icon name="chevron" />
+                    </button>
+                  </article>
+                  {account.provider === 'claude' && <ClaudeUsage account={account} now={now} />}
+                </Fragment>
               ))}
             </section>
           );
@@ -1256,8 +1259,8 @@ export function TailnetApp() {
                   <p className={styles.ledgerNote}>
                     <Icon name="shield" />
                     Codex percentages come from saved reset-probe baselines and may lag actual
-                    usage. Claude is checked every five minutes; weekly quota is not reported.
-                    Refresh reads saved state, not provider APIs.
+                    usage. Claude usage is checked every five minutes; only reported limits are
+                    shown. Refresh reads saved state, not provider APIs.
                   </p>
                 </>
               )}

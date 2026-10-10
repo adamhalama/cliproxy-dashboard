@@ -17,6 +17,7 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 
 - Dark sidebar, provider tabs, combined quota summaries, and account ledgers modeled on the supplied CPAMC screenshots.
 - Shows remaining quota, reset countdowns, weekly-only seats, blocked sign-ins, and unavailable readings.
+- Shows Claude's reported weekly and model-specific usage, reset times, dollar credit pools, and extra-usage spending and monthly limits. Values are sampled, with stale and missing readings labeled.
 - Filters and searches accounts; displays the configured Codex routing order.
 - Reads the existing scheduler and Claude timer through the installed `cliproxy-quota status` helper.
 - Supports deliberate Codex device sign-in and Claude reauthentication with a callback paste step.
@@ -24,7 +25,7 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 - Reviews alias/priority changes before saving. A save invokes the installed helper and briefly restarts the proxy.
 - Offers a token-free tailnet API on 8318 while preserving the existing HTTPS 8443 gateway and T3 on HTTPS 443.
 
-The dashboard’s refresh reads **saved scheduler reset-probe baselines**, not provider APIs. Codex consumption can be newer than those baselines, and Codex has no observation timestamp in the helper output. Claude is sampled by its five-minute timer. Missing Claude weekly usage and manual-reset balances stay unavailable. The configured routing order is explanatory, not evidence of which account handled the last request.
+The dashboard’s refresh reads **saved scheduler reset-probe baselines**, not provider APIs. Codex consumption can be newer than those baselines, and Codex has no observation timestamp in the helper output. Claude is sampled by its five-minute timer; its usage section shows all reported limits after the collector upgrade below. Missing values and manual-reset balances stay unavailable. The configured routing order is explanatory, not evidence of which account handled the last request.
 
 Deployment leaves the established policy intact: Plus and Team priority 100, earliest weekly reset first, Pro Lite priority 0 as weekly-only overflow, and existing window activation. The proxy’s management API remains disabled. The adapter never reads OAuth credentials, proxy config, or scheduler files directly.
 
@@ -69,5 +70,25 @@ systemctl --user daemon-reload
 ```
 
 No proxy restart, gateway change, or server reboot is needed for deployment or rollback.
+
+## Claude usage collector upgrade
+
+Detailed Claude usage requires the upgraded collector and status helper in
+[easycliproxy-quota-setup](https://github.com/adamhalama/easycliproxy-quota-setup/blob/main/server/CLAUDE_USAGE.md).
+The dashboard remains compatible with the previous helper, showing unavailable
+detail until that upgrade is installed. The adapter uses the helper's new
+quota-only `claude usage:` line and never reads credentials or state directly.
+
+An administrator on the Lenovo must install the root-owned scripts:
+
+```sh
+sudo bash /srv/agents/easycliproxy-quota-setup/server/install-claude-usage.sh
+```
+
+The installer backs up both scripts and runs one normal quota check. The
+five-minute timer keeps collecting usage afterward. General weekly usage appears
+in the existing ledger; model windows, dollar pools, and enabled/disabled extra
+usage appear beneath the Claude row. Extra usage amounts are converted from
+cents to dollars. Optional limits appear only when Anthropic supplies them.
 
 Design work uses Anthropic’s [frontend-design skill](https://github.com/anthropics/skills/tree/main/skills/frontend-design), included with its license under `docs/design/`.

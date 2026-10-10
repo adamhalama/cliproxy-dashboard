@@ -146,7 +146,7 @@ export async function handler(req, res) {
           gatewayUrl: `http://${tailnetHost}:${port}`,
           dashboardUrl: `http://${tailnetHost}:${port}`,
           source:
-            'Saved scheduler reset-probe baselines; Codex usage may lag actual consumption. Claude is checked every five minutes. Refresh reads saved state, not provider APIs.',
+            'Saved scheduler reset-probe baselines; Codex usage may lag actual consumption. Claude usage is checked every five minutes, including reported weekly and model limits. Refresh reads saved state, not provider APIs.',
           policy: {
             mode: 'Fill first',
             description:

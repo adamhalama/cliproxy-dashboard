@@ -5,6 +5,30 @@ export type QuotaWindow = {
   state: string;
 };
 
+export type ClaudeUsageWindow = {
+  id: string;
+  label: string;
+  usedPercent: number | null;
+  resetAt: string | null;
+  periodHours: number | null;
+  limitDollars: number | null;
+  usedDollars: number | null;
+  remainingDollars: number | null;
+};
+
+export type ClaudeExtraUsage = {
+  enabled: boolean;
+  monthlyLimitCents: number | null;
+  usedCreditsCents: number | null;
+  usedPercent: number | null;
+};
+
+export type ClaudeUsage = {
+  checkedAt: string | null;
+  windows: ClaudeUsageWindow[];
+  extraUsage: ClaudeExtraUsage | null;
+};
+
 export type Account = {
   id: string;
   provider: 'codex' | 'claude';
@@ -16,6 +40,7 @@ export type Account = {
   blocked: boolean;
   windows: QuotaWindow[];
   lastCheckedAt: string | null;
+  claudeUsage?: ClaudeUsage;
 };
 
 export type DashboardStatus = {

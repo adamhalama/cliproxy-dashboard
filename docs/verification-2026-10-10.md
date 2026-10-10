@@ -71,3 +71,41 @@ After deployment, the service was active. `python3 deploy/verify-api.py` passed:
 33 models were available without a client token and cross-origin requests were
 blocked. The temporary preview listener was stopped. Account-specific model
 request verification was not performed for this follow-up.
+
+## Full Claude usage follow-up
+
+The dashboard now accepts the helper's optional `claude usage:` JSON line.
+General weekly usage populates the existing ledger. A Claude detail section
+shows reported model and scoped limits, used/remaining percentages, reset
+times, dollar credit pools, and enabled/disabled extra usage with spending
+and monthly limits. Missing values are not converted to zero. Detail readings
+older than ten minutes and reset times that have passed are marked accordingly.
+
+- `bun run verify`: 1,601 tests passed, zero failures; ESLint and the upstream
+  TypeScript/production build passed.
+- `bun run build:tailnet`: TypeScript and single-file build passed.
+- Collector tests: 9 Ruby cases and 34 assertions passed. The Python contract
+  check passed from a synthetic provider response through the Ruby collector,
+  helper's actual jq allowlist, and Node adapter. Quota export excluded tokens
+  and state-only credential fields.
+- Administrator installer `--check` passed. Collector/helper syntax passed.
+- T3 browser: synthetic test account displayed five-hour, weekly, Sonnet,
+  Opus, OAuth apps, Cowork, Fable, cloud credits, and extra usage. Desktop and
+  iPhone-size views had no horizontal overflow. Used meters had distinct
+  accessible labels from the ledger's remaining-capacity meters. Additional
+  scenarios verified disabled extra usage without invented $0 balances,
+  stale observations, and absent detail from the previous helper.
+- A temporary real-backend preview verified compatibility with the installed
+  helper before UI deployment. After deploying the dashboard user service,
+  the live page correctly states that collector detail is unavailable.
+  The service is active; token-free model list (33 models) and cross-origin
+  request rejection passed. Temporary preview listeners were stopped.
+
+The collector/helper source upgrade is published in the quota setup repository
+at commit `ddb6780`. Its root-owned files are **not yet installed**: this agent's
+sudo rule allows only existing helpers, not root file installation. An
+administrator must run `server/install-claude-usage.sh` as documented in that
+repository and this dashboard's README. Real weekly/model/extra Claude data
+cannot be verified until that step. No OAuth login, routing mutation, proxy
+restart, or reboot was performed for this follow-up. The UI is already deployed
+and accepts the richer status output once the root upgrade is installed.

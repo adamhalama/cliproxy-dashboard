@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parseClaudeUsage } from './claude-usage.mjs';
 
 export function accountId(filename) {
   return createHash('sha256').update(filename).digest('hex').slice(0, 20);
@@ -19,9 +20,11 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   let account = null;
   let proxy = 'unknown';
   let claudeTimer = 'unknown';
+  let claudeUsage;
   for (const line of output.split('\n')) {
     if (line.startsWith('cliproxy: ')) proxy = line.slice(10).trim();
     else if (line.startsWith('claude-quota-probe.timer: ')) claudeTimer = line.slice(25).trim();
+    else if (line.startsWith('claude usage: ')) claudeUsage = parseClaudeUsage(line.slice(14));
     else if (/^codex-[A-Za-z0-9._@+-]+\.json$/.test(line)) {
       const plan = line.includes('prolite')
         ? 'Business Pro Lite'
@@ -106,6 +109,26 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
           windows: [],
           lastCheckedAt: null,
         });
+    }
+  }
+  const claude = accounts.find((entry) => entry.provider === 'claude');
+  if (claude && claudeUsage) {
+    claude.claudeUsage = claudeUsage;
+    for (const [id, kind] of [
+      ['five_hour', 'five_hour'],
+      ['seven_day', 'weekly'],
+    ]) {
+      const observed = claudeUsage.windows.find((window) => window.id === id);
+      if (!observed) continue;
+      const existing = claude.windows.findIndex((window) => window.kind === kind);
+      const window = {
+        kind,
+        state: claude.blocked ? 'error' : 'active',
+        usedPercent: observed.usedPercent,
+        resetAt: observed.resetAt,
+      };
+      if (existing < 0) claude.windows.push(window);
+      else claude.windows[existing] = window;
     }
   }
   if (proxy === 'unknown') throw new Error('Quota helper returned an unreadable status.');
