@@ -1,5 +1,24 @@
 # Repository Guidelines
 
+## Lenovo Tailnet Fork
+
+This fork also supplies a separate English dashboard requested for the existing Lenovo server.
+`bun run build:tailnet` builds `src/tailnet-main.tsx`, leaving the upstream v8 entry available
+through `bun run build`. The standalone feature lives under `src/features/tailnet/`; it does
+not use or emulate a Management API. Its domain client calls the same-origin Node adapter in
+`server/`, which uses the authorized root-owned `cliproxy-quota` helper for quota and account
+actions. Its token-free `/v1/` API bridge authenticates to the local proxy internally with
+the existing unprivileged agent client `token-helper`; never expose that key to the browser.
+Both dashboard and API require the configured GitHub-linked Tailscale owner identity,
+with no dashboard password or client API key prompt.
+Do not enable management, access credential/state files directly, change the routing policy
+as part of deployment, replace T3's Serve 443 or the API's Serve 8443, or reboot the machine.
+Tailnet UI copy is intentionally English and separate from upstream translation keys.
+Preserve hash routes and the single-file build. Quota values are saved reset-probe baselines,
+not guaranteed live usage; absent windows must stay unavailable. Sign-in and priority writes
+must be explicit user actions. Run `bun run verify`, `bun run build:tailnet`, and verify the
+tailnet routes in the collaborative browser before deploying the systemd user service.
+
 ## Project Scope & Structure
 
 This is a React 19 + TypeScript + Vite management frontend for CLI Proxy API, not the proxy itself. It exclusively uses the backend v8 Management API under `/v8/management` and the v8 configuration layout; do not add v0 fallbacks or legacy config adapters. Plugin resources and custom HTTP extensions are exceptions: preserve their backend-declared paths. The one sanctioned v0 touchpoint is `src/services/api/legacyBackendProbe.ts`: after a v8 login 404 it only detects an outdated backend to show a clearer error, and must never supply application data or act as a login fallback.

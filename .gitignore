@@ -17,6 +17,7 @@ codex_usage.json
 style.md
 
 node_modules
+__pycache__/
 dist
 dist-ssr
 *.local

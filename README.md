@@ -1,170 +1,70 @@
-<div align="center">
+# Lenovo CLI Proxy dashboard
 
-<img src="./logo.jpg" alt="CLI Proxy API" width="144">
+A quota-focused fork of [CLI Proxy API Management Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center), built for the always-on Lenovo T450 server. The original upstream frontend and MIT license are preserved; its documentation is in [README_UPSTREAM.md](README_UPSTREAM.md).
 
-# CLI Proxy API Management Center
+Open **http://t450-server.tail8f1c78.ts.net:8318/#quota** while connected to Tailscale as the dashboard owner. The listener binds only to the server’s Tailscale IPv4 address and loopback. Tailscale encrypts peer traffic; the dashboard checks the connecting peer’s Tailscale identity. It does not use Funnel or a public network listener.
 
-**Your proxy, at a glance. Your configuration, in control.**
+**No dashboard password or client API token is required.** The owner’s GitHub-linked Tailscale identity authorizes access to both the dashboard and its API:
 
-A lightweight Web UI for CLI Proxy API.<br>
-Manage providers, credentials, quotas, and logs — from a single HTML file.
-
-[![Backend: v8](https://img.shields.io/badge/Backend-v8-5865F2?style=flat-square)](https://github.com/router-for-me/CLIProxyAPI)
-[![Single-file build](https://img.shields.io/badge/Build-single_HTML-0F766E?style=flat-square)](#deployment)
-[![License: MIT](https://img.shields.io/badge/License-MIT-64748B?style=flat-square)](LICENSE)
-
-**English** · [简体中文](README_CN.md)
-
-[Get started](#quick-start) · [Features](#features) · [Development](#development) · [Releases](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/releases)
-
-</div>
-
----
-
-## One place to manage your instance
-
-From everyday configuration to troubleshooting, keep the essentials close at hand.
-
-| Configure | Connect | Observe |
-| --- | --- | --- |
-| Edit settings visually or in YAML, with a diff before saving. | Manage provider keys, auth files, and OAuth flows. | Check instance status, provider quotas, and request logs. |
-
-**Single-file deployment** · **Responsive layout** · **Four UI languages**
-
-> [!IMPORTANT]
-> Requires **CLI Proxy API ≥ 8.0.0**; the latest v8 release is recommended. This repository is the management UI, not the proxy — it does not forward traffic. It uses the **v8 Management API** (`/v8/management`) and v8 configuration layout, with no v0 fallback. Plugin resources and custom extensions retain their backend-declared paths.
-
-## Quick start
-
-The UI is bundled with [CLI Proxy API](https://github.com/router-for-me/CLIProxyAPI). No separate frontend deployment is needed for the standard setup.
-
-1. Start your CLI Proxy API service.
-2. Open `http://<host>:<api_port>/management.html`.
-3. Enter your **management key** and connect.
-
-The API address is detected from the page URL and can be changed manually.
-
-> [!NOTE]
-> The **management key** signs you into this UI. Client keys in `access.api-keys` authorize requests to the proxy — they are not interchangeable.
-
-<details>
-<summary><strong>Connection settings & remote access</strong></summary>
-
-The UI accepts addresses such as `localhost:8317`, `https://example.com:8317`, or `http://example.com:8317/v8/management`; the management suffix is removed automatically.
-
-Management requests use `Authorization: Bearer <MANAGEMENT_KEY>`. Remote access may require `management.allow-remote: true` on the server. See the [backend documentation](https://github.com/router-for-me/CLIProxyAPI) for authentication rules and server-side limits.
-
-</details>
-
-<details>
-<summary><strong>Upgrading from v7</strong></summary>
-
-Upgrade the backend first and back up `config.yaml`. The backend returns the v8 configuration layout on reads; a successful v8 configuration write migrates the stored file. The editor only writes v8 fields:
-
-- `access.api-keys`: client keys for accessing the proxy.
-- Top-level `api-keys`: upstream provider groups.
-
-</details>
-
-## Features
-
-| Area | What you can do |
+| Client | Token-free base URL |
 | --- | --- |
-| **Dashboard** | See connection status, server version, build date, and model availability at a glance. |
-| **Configuration** | Edit common settings and client keys visually, or use the YAML editor with search, highlighting, and a save diff preview. |
-| **AI providers** | Configure Gemini, Codex, Claude, Vertex, and OpenAI-compatible providers; manage keys, headers, proxies, and model mappings. |
-| **Auth files & OAuth** | Upload, download, and organize credentials; connect supported providers with OAuth or device flows; manage model aliases and exclusions. |
-| **Quotas** | Inspect quota and usage information for supported providers, including Claude, Antigravity, Codex, Kimi, and xAI/Grok. |
-| **Logs** | Follow logs with auto-refresh, search, hide management traffic, and download request error logs. |
-| **Plugins** | Access plugin management when the connected backend advertises support. |
-| **System** | Check for updates, inspect available models, and clear local login data. |
+| Codex / OpenAI-compatible | `http://t450-server.tail8f1c78.ts.net:8318/v1` |
+| Claude / Anthropic-compatible | `http://t450-server.tail8f1c78.ts.net:8318` |
 
-Supports **English, 简体中文, 繁體中文, and Русский**, with browser-language detection and a manual language switch. Responsive layouts support desktop, tablet, and mobile use in modern Chrome, Firefox, Safari, and Edge.
+The `/v1/` bridge forwards streaming requests to the loopback proxy and authenticates internally using the existing agent client `token-helper`. The client sends no authorization header. Existing clients using the key-protected HTTPS 8443 endpoint keep working.
 
-## Sponsor
+## What it does
 
-[![APIMart — AI image and video generation API](./assets/apimart-en.png)](https://go.apimart.ai/gh-cli-proxy-api-management-center)
+- Dark sidebar, provider tabs, combined quota summaries, and account ledgers modeled on the supplied CPAMC screenshots.
+- Shows remaining quota, reset countdowns, weekly-only seats, blocked sign-ins, and unavailable readings.
+- Filters and searches accounts; displays the configured Codex routing order.
+- Reads the existing scheduler and Claude timer through the installed `cliproxy-quota status` helper.
+- Supports deliberate Codex device sign-in and Claude reauthentication with a callback paste step.
+- Reviews alias/priority changes before saving. A save invokes the installed helper and briefly restarts the proxy.
+- Offers a token-free tailnet API on 8318 while preserving the existing HTTPS 8443 gateway and T3 on HTTPS 443.
 
-Thanks to **APIMart** for sponsoring this project!
+The dashboard’s refresh reads **saved scheduler reset-probe baselines**, not provider APIs. Codex consumption can be newer than those baselines, and Codex has no observation timestamp in the helper output. Claude is sampled by its five-minute timer. Missing Claude weekly usage and manual-reset balances stay unavailable. The configured routing order is explanatory, not evidence of which account handled the last request.
 
-APIMart is a low-cost API platform for AI image & video generation — GPT-Image-2 from $0.006/image, 160+ images per dollar. One async API covers both image and video: submit a task, get an ID, fetch results via polling or callback. Batch tens of thousands of images without timeouts, switch models without changing code. Pay-as-you-go with no monthly fee — [sign up here](https://go.apimart.ai/gh-cli-proxy-api-management-center) to get started.
+Deployment leaves the established policy intact: Plus and Team priority 100, earliest weekly reset first, Pro Lite priority 0 as weekly-only overflow, and existing window activation. The proxy’s management API remains disabled. The adapter never reads OAuth credentials, proxy config, or scheduler files directly.
 
-## Deployment
+## Build and deploy
 
-To build your own single-file UI, use **Bun 1.3.14**:
+Requires Node.js 24, Bun 1.3.14, systemd user services, Tailscale, and the root-owned `/usr/local/sbin/cliproxy-quota` helper with the existing narrow sudo rule. User lingering must already be enabled for boot persistence.
 
-```bash
+```sh
 bun install --frozen-lockfile
-bun run build
+bun run verify
+bun run build:tailnet
+bash deploy/install-user-service.sh
 ```
 
-The output is **`dist/index.html`**, with JavaScript, CSS, and bundled assets inlined. The release workflow renames it to `management.html` for backend hosting.
+The tailnet build replaces only the HTML entry with `src/tailnet-main.tsx` and produces a single `dist/index.html`. `bun run build` still builds upstream’s v8 Management API frontend. Always run `build:tailnet` last before deploying this dashboard.
 
-Use `bun run preview` to preview locally. Prefer an HTTP server over opening the file via `file://`, which can encounter browser CORS restrictions.
-
-<details>
-<summary><strong>Release details</strong></summary>
-
-- Tags matching `vX.Y.Z` trigger [the release workflow](.github/workflows/release.yml).
-- The UI version is injected at build time from `VERSION`, then git tags, then the package version, with `dev` as the final fallback.
-- Hash routing and an ES2020 build target keep deployment simple.
-
-</details>
-
-## Development
-
-```bash
-bun install --frozen-lockfile
-bun run dev
+```sh
+systemctl --user status cliproxy-dashboard.service
+journalctl --user -u cliproxy-dashboard.service --no-pager -n 30
+curl http://127.0.0.1:8318/api/health
 ```
 
-Open `http://localhost:5173` and connect to your backend instance.
+Configuration defaults in `deploy/cliproxy-dashboard.service` target this Lenovo. Adjust `DASHBOARD_TAILNET_IP`, `DASHBOARD_TAILNET_HOST`, `DASHBOARD_OWNER`, and `DASHBOARD_PORT` for another node. No access tokens or credentials go in the service or repository. The API bridge reuses `/home/agent/.config/easycli/token-helper` on the server; adapt that path for another account. The server enforces its hostname allowlist, checks peer identity, and blocks cross-origin writes. Dashboard settings actions use an automatic in-memory CSRF token; this is not a password or client API requirement. Sign-in URLs/codes are shown only after a user action; callback URLs are never logged or stored by the adapter.
 
-**Built with** React 19 · TypeScript 6 · Vite 8 · Zustand · Axios · React Router 7 · Motion · CodeMirror 6 · SCSS Modules · i18next.
+## Verification and rollback
 
-| Command | Purpose |
-| --- | --- |
-| `bun run dev` | Start the Vite dev server |
-| `bun run build` | TypeScript compilation + production build |
-| `bun run preview` | Serve the build locally |
-| `bun run test` | Run Bun tests |
-| `bun run lint` | Run ESLint; warnings are not treated as failures |
-| `bun run type-check` | Run `tsc --noEmit` |
-| `bun run verify` | Run tests, lint, and build |
-| `bun run format` | Format source files with Prettier |
+Adapter and HTTP-boundary regressions are in `tests/tailnetDashboard.test.ts`; the upstream tests remain available. Browser validation should cover quota filters, account search, read-only connection details, login dialogs, priority review/cancel, and mobile layout. Do not start OAuth flows or write priorities as a routine UI test.
 
-Issues and PRs are welcome. Include reproduction steps, backend and UI versions, screenshots for UI changes, and verification results. See [AGENTS.md](AGENTS.md) for repository conventions.
+```sh
+python3 deploy/verify-api.py          # token-free model list and origin boundary
+python3 deploy/verify-api.py --models # also tests Codex/Claude streaming and cancellation
+```
 
-## Security
+To remove this dashboard without changing the proxy:
 
-Treat the management key as a secret. When **remember password** is enabled, it is persisted in browser storage using reversible obfuscation — **not encryption**.
+```sh
+systemctl --user disable --now cliproxy-dashboard.service
+rm ~/.config/systemd/user/cliproxy-dashboard.service
+systemctl --user daemon-reload
+```
 
-Use a trusted device or dedicated browser profile. Enable remote management only after evaluating the exposure of your server.
+No proxy restart, gateway change, or server reboot is needed for deployment or rollback.
 
-## Troubleshooting
-
-<details>
-<summary><strong>Connection or authentication problems</strong></summary>
-
-- **Cannot connect / 401:** check the API address and management key. Remote connections may require remote management to be enabled.
-- **Repeated authentication failures:** the server may temporarily block remote IPs.
-
-</details>
-
-<details>
-<summary><strong>Missing pages, unsupported features, or failed tests</strong></summary>
-
-- **Logs page missing:** enable “Logging to file” in Basic Settings.
-- **Feature unsupported:** check the backend version and whether the relevant endpoint is enabled. Some capabilities depend on backend support.
-- **Model list unavailable:** querying `/v1/models` requires at least one proxy API key.
-- **OpenAI provider test fails:** this test runs in the browser and depends on the provider's network reachability and CORS policy. Failure does not necessarily mean the backend cannot reach it.
-
-</details>
-
----
-
-<div align="center">
-
-[CLI Proxy API](https://github.com/router-for-me/CLIProxyAPI) · [Report an issue](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/issues) · [MIT License](LICENSE)
-
-</div>
+Design work uses Anthropic’s [frontend-design skill](https://github.com/anthropics/skills/tree/main/skills/frontend-design), included with its license under `docs/design/`.

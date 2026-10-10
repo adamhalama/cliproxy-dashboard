@@ -36,8 +36,19 @@ function getVersion(): string {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
+    {
+      name: 'tailnet-dashboard-entry',
+      transformIndexHtml: {
+        order: 'pre',
+        handler(html) {
+          return mode === 'tailnet'
+            ? html.replace('/src/main.tsx', '/src/tailnet-main.tsx').replace('lang="zh-CN"', 'lang="en"')
+            : html;
+        }
+      }
+    },
     react(),
     viteSingleFile({
       removeViteModuleLoader: true
@@ -74,4 +85,4 @@ export default defineConfig({
       }
     }
   }
-});
+}));

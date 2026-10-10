@@ -1,0 +1,20 @@
+[Unit]
+Description=CLI Proxy tailnet quota dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/agents/easycliproxy-quota-setup/dashboard
+ExecStart=/usr/local/bin/node /srv/agents/easycliproxy-quota-setup/dashboard/server/dashboard.mjs
+Environment=DASHBOARD_PORT=8318
+Environment=DASHBOARD_TAILNET_IP=100.89.229.100
+Environment=DASHBOARD_TAILNET_HOST=t450-server.tail8f1c78.ts.net
+Environment=DASHBOARD_OWNER=adamhalama@github
+Restart=on-failure
+RestartSec=5
+UMask=0077
+# The narrow installed sudo helper is required. NoNewPrivileges would block it.
+
+[Install]
+WantedBy=default.target
