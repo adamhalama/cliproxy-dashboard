@@ -4,6 +4,7 @@ import codexIcon from '@/assets/icons/codex.svg';
 import claudeIcon from '@/assets/icons/claude.svg';
 import { copyToClipboard } from '@/utils/clipboard';
 import { dashboardApi } from './api';
+import { checkLoginTarget } from './login';
 import type { Account, DashboardStatus, LoginResult, QuotaWindow } from './types';
 import styles from './TailnetApp.module.scss';
 
@@ -275,6 +276,14 @@ function QuotaMeter({
             : timeUntil(window?.resetAt ?? null, now)}
       </div>
       {state === 'stale' && !blocked && <span className={styles.staleLabel}>Stale snapshot</span>}
+      {!blocked && window?.state === 'RetryWait' && (
+        <span
+          className={styles.staleLabel}
+          title="The scheduler is retrying quota window activation. This is not an authentication block."
+        >
+          Wake-up retry pending
+        </span>
+      )}
     </div>
   );
 }
@@ -356,6 +365,14 @@ function AccountIdentity({ account }: { account: Account }) {
           {account.alias || account.maskedIdentity}
         </strong>
         {account.blocked && <span className={styles.blockedBadge}>Auth blocked</span>}
+        {!account.blocked && account.windows.some((window) => window.state === 'RetryWait') && (
+          <span
+            className={styles.badge}
+            title="Quota window activation is retrying; sign-in is not reported as blocked."
+          >
+            Wake-up retry
+          </span>
+        )}
       </div>
       <div className={styles.identityMeta}>
         <span>{account.plan || providerNames[account.provider]}</span>
@@ -512,12 +529,14 @@ function EditAccount({
 
 function LoginModal({
   provider,
+  expectedAccount,
   onClose,
   onDone,
 }: {
   provider: Account['provider'];
+  expectedAccount?: Account;
   onClose: () => void;
-  onDone: () => void;
+  onDone: (result: LoginResult) => void;
 }) {
   const [result, setResult] = useState<LoginResult | null>(null);
   const [pending, setPending] = useState(false);
@@ -527,13 +546,17 @@ function LoginModal({
     setPending(true);
     setError('');
     try {
-      const response = await (type === 'start'
-        ? dashboardApi.startLogin(provider)
-        : type === 'callback'
-          ? dashboardApi.claudeCallback(callback.trim())
-          : dashboardApi.loginStatus());
-      setResult((previous) => ({ ...previous, ...response }));
-      if (response.state === 'succeeded') onDone();
+      const response = checkLoginTarget(
+        await (type === 'start'
+          ? dashboardApi.startLogin(provider)
+          : type === 'callback'
+            ? dashboardApi.claudeCallback(callback.trim())
+            : dashboardApi.loginStatus()),
+        provider,
+        expectedAccount
+      );
+      setResult((previous) => (type === 'start' ? response : { ...previous, ...response }));
+      if (response.state === 'succeeded') onDone(response);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Sign-in could not be completed.');
     } finally {
@@ -541,14 +564,17 @@ function LoginModal({
     }
   }
   const complete = !!result && result.state === 'succeeded';
+  const awaitingScheduler = complete && result.verification !== 'scheduler-observed';
   const safeUrl = result?.url && /^https?:\/\//i.test(result.url) ? result.url : null;
   return (
     <Modal title={`${providerNames[provider]} sign-in`} onClose={onClose}>
       <div className={styles.form}>
         <p className={styles.modalIntro}>
-          {provider === 'codex'
-            ? 'Sign in with your ChatGPT account to add or reconnect a Codex subscription on Lenovo.'
-            : 'Reconnect Claude on Lenovo using the provider’s browser sign-in.'}
+          {expectedAccount
+            ? `Reconnect ${expectedAccount.alias}. Choose the intended account (${expectedAccount.maskedIdentity}) on the provider’s sign-in page. A different account will not reconnect this subscription.`
+            : provider === 'codex'
+              ? 'Sign in with your ChatGPT account to add or reconnect a Codex subscription on Lenovo.'
+              : 'Reconnect Claude on Lenovo using the provider’s browser sign-in.'}
         </p>
         {!result && (
           <div className={styles.actionRow}>
@@ -574,11 +600,11 @@ function LoginModal({
         )}
         {result && (
           <>
-            <div className={complete ? styles.successNotice : styles.notice}>
+            <div className={complete && !awaitingScheduler ? styles.successNotice : styles.notice}>
               <Icon name={complete ? 'check' : 'shield'} />
               <p>{result.message || 'Continue in the provider’s sign-in window.'}</p>
             </div>
-            {/failed|cancelled|idle/i.test(result.state) && (
+            {/failed|cancelled|idle|wrong-account/i.test(result.state) && (
               <button
                 type="button"
                 className={styles.primaryButton}
@@ -636,7 +662,7 @@ function LoginModal({
               <button type="button" className={styles.button} onClick={onClose}>
                 {complete ? 'Done' : 'Close'}
               </button>
-              {!complete && (
+              {(!complete || awaitingScheduler) && (
                 <button
                   type="button"
                   className={styles.button}
@@ -644,7 +670,7 @@ function LoginModal({
                   onClick={() => void action('check')}
                 >
                   <Icon name="refresh" />
-                  {pending ? 'Checking…' : 'Check sign-in'}
+                  {pending ? 'Checking…' : complete ? 'Check scheduler status' : 'Check sign-in'}
                 </button>
               )}
             </div>
@@ -720,6 +746,7 @@ export function TailnetApp() {
   const [mobileNav, setMobileNav] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
   const [login, setLogin] = useState<Account['provider'] | null>(null);
+  const [loginTarget, setLoginTarget] = useState<Account | null>(null);
   const [notice, setNotice] = useState('');
   const inFlight = useRef(false);
   const alive = useRef(true);
@@ -773,12 +800,11 @@ export function TailnetApp() {
   useEffect(() => {
     document.title = `${pages[page].label} · Lenovo Proxy Console`;
   }, [page]);
-  useEffect(() => {
-    if (!notice) return;
-    const timeout = window.setTimeout(() => setNotice(''), 8000);
-    return () => clearTimeout(timeout);
-  }, [notice]);
   const accounts = status?.accounts ?? [];
+  function reconnect(account: Account) {
+    setLoginTarget(account);
+    setLogin(account.provider);
+  }
   const blocked = accounts.filter((account) => account.blocked);
   const stale = accounts.filter(
     (account) =>
@@ -941,7 +967,7 @@ export function TailnetApp() {
                     className={styles.quietButton}
                     onClick={() =>
                       account.blocked || account.provider === 'claude'
-                        ? setLogin(account.provider)
+                        ? reconnect(account)
                         : setEditing(account)
                     }
                     aria-label={`${account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'} ${account.alias || account.maskedIdentity}`}
@@ -1282,27 +1308,23 @@ export function TailnetApp() {
                           </small>
                         </div>
                         <div className={styles.actionRow}>
-                          <>
-                            {account.provider === 'codex' && (
-                              <button
-                                type="button"
-                                className={styles.button}
-                                onClick={() => setEditing(account)}
-                                aria-label={`Edit ${account.alias || account.maskedIdentity}`}
-                              >
-                                Edit
-                              </button>
-                            )}
-                          </>
-                          {(account.blocked || account.provider === 'claude') && (
+                          {account.provider === 'codex' && (
                             <button
                               type="button"
                               className={styles.button}
-                              onClick={() => setLogin(account.provider)}
+                              onClick={() => setEditing(account)}
+                              aria-label={`Edit ${account.alias || account.maskedIdentity}`}
                             >
-                              Reconnect
+                              Edit
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className={styles.button}
+                            onClick={() => reconnect(account)}
+                          >
+                            Reconnect
+                          </button>
                         </div>
                       </article>
                     ))}
@@ -1491,9 +1513,13 @@ export function TailnetApp() {
       {login && (
         <LoginModal
           provider={login}
-          onClose={() => setLogin(null)}
-          onDone={() => {
-            setNotice('Sign-in completed. Reading the latest account snapshot.');
+          expectedAccount={loginTarget ?? undefined}
+          onClose={() => {
+            setLogin(null);
+            setLoginTarget(null);
+          }}
+          onDone={(result) => {
+            setNotice(result.message);
             void refresh();
           }}
         />

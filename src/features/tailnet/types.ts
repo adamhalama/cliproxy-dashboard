@@ -35,6 +35,10 @@ export type DashboardStatus = {
 
 export type LoginResult = {
   state: string;
+  provider?: 'codex' | 'claude';
+  accountId?: string;
+  accountAlias?: string;
+  verification?: 'pending' | 'auth-blocked' | 'scheduler-observed';
   url?: string;
   code?: string;
   message: string;

@@ -7,6 +7,9 @@ service_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 [[ -f "$repo_dir/dist/index.html" ]] || { echo 'Build first: bun run build:tailnet' >&2; exit 1; }
 [[ -x /usr/local/sbin/cliproxy-quota ]] || { echo 'The installed quota helper is required.' >&2; exit 1; }
 mkdir -p "$service_dir"
+mkdir -p "$repo_dir/.runtime"
+install -m 600 "$repo_dir/dist/index.html" "$repo_dir/.runtime/dashboard.html.new"
+mv "$repo_dir/.runtime/dashboard.html.new" "$repo_dir/.runtime/dashboard.html"
 python3 - "$repo_dir" "$node_bin" "$service_dir/cliproxy-dashboard.service" <<'PY'
 import pathlib, sys
 repo, node, output = sys.argv[1:]

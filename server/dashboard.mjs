@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { parseStatus, parseLogin } from './status.mjs';
+import { parseStatus, parseLogin, verifyLoginStatus } from './status.mjs';
 import { proxyApi } from './api-bridge.mjs';
 
 const execute = promisify(execFile);
@@ -13,7 +13,8 @@ const tailnetIp = process.env.DASHBOARD_TAILNET_IP || '100.89.229.100';
 const tailnetHost = process.env.DASHBOARD_TAILNET_HOST || 't450-server.tail8f1c78.ts.net';
 const ownerLogin = process.env.DASHBOARD_OWNER || 'adamhalama@github';
 const token = randomBytes(32).toString('hex');
-const dist = fileURLToPath(new URL('../dist/index.html', import.meta.url));
+const dist =
+  process.env.DASHBOARD_HTML || fileURLToPath(new URL('../dist/index.html', import.meta.url));
 const allowedHosts = new Set([
   `${tailnetHost}:${port}`,
   `${tailnetIp}:${port}`,
@@ -45,7 +46,11 @@ async function helper(...args) {
   }
 }
 
-async function getStatus() {
+async function getStatus(force = false) {
+  if (force) {
+    if (pendingSnapshot) await pendingSnapshot.catch(() => {});
+    snapshot = null;
+  }
   if (snapshot && Date.now() - snapshot.at < 5000) return snapshot;
   if (!pendingSnapshot)
     pendingSnapshot = helper('status')
@@ -150,8 +155,14 @@ export async function handler(req, res) {
           },
         });
       }
-      if (url.pathname === '/api/login/status')
-        return respond(res, 200, parseLogin(await helper('login-status')));
+      if (url.pathname === '/api/login/status') {
+        const login = parseLogin(await helper('login-status'));
+        const result = await verifyLoginStatus(
+          login,
+          async () => (await getStatus(true)).data.accounts
+        );
+        return respond(res, 200, result);
+      }
       if (url.pathname.startsWith('/api/'))
         return respond(res, 404, { error: 'Unknown dashboard endpoint.' });
       if (!['/', '/management.html', '/index.html'].includes(url.pathname))
@@ -216,8 +227,11 @@ export async function handler(req, res) {
             'Paste the full localhost:54545/callback URL from your browser after approving Claude sign-in.',
         });
       }
-      const result = parseLogin(await helper('claude-login-callback', body.url));
-      snapshot = null;
+      const login = parseLogin(await helper('claude-login-callback', body.url));
+      const result = await verifyLoginStatus(
+        login,
+        async () => (await getStatus(true)).data.accounts
+      );
       return respond(res, 200, result);
     }
     return respond(res, 404, { error: 'Unknown dashboard action.' });

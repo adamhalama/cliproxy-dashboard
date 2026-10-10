@@ -116,6 +116,17 @@ export function parseLogin(output) {
   const code = output.match(/device code:\s*(\S+)/i)?.[1];
   const deviceUrl = output.match(/device URL:\s*(https:\/\/\S+)/i)?.[1];
   const claudeUrl = output.match(/^https:\/\/claude\.ai\/oauth\/authorize\S*$/m)?.[0];
+  const saved = [
+    ...output.matchAll(/^saved credential: ((codex|claude)-[A-Za-z0-9._@+-]+\.json)$/gm),
+  ];
+  const savedFile = saved.length === 1 ? saved[0][1] : null;
+  const provider = savedFile
+    ? saved[0][2]
+    : claudeUrl
+      ? 'claude'
+      : code || deviceUrl
+        ? 'codex'
+        : null;
   const state = output.includes('state: succeeded')
     ? 'succeeded'
     : output.includes('state: failed')
@@ -125,6 +136,10 @@ export function parseLogin(output) {
         : 'unknown';
   return {
     state,
+    ...(provider ? { provider } : {}),
+    ...(savedFile
+      ? { accountId: provider === 'claude' ? 'claude-subscription' : accountId(savedFile) }
+      : {}),
     ...(code ? { code } : {}),
     ...(deviceUrl || claudeUrl ? { url: deviceUrl || claudeUrl } : {}),
     message:
@@ -136,4 +151,44 @@ export function parseLogin(output) {
             ? 'Complete sign-in in your browser, then check the result.'
             : 'No sign-in result is available.',
   };
+}
+
+export function verifySavedLogin(login, accounts) {
+  if (login.state !== 'succeeded') return login;
+  const account = accounts.find((entry) => entry.id === login.accountId);
+  const name = account?.alias || 'the account';
+  const verification =
+    !account || !account.inRoster || !account.windows.length
+      ? 'pending'
+      : account.blocked
+        ? 'auth-blocked'
+        : 'scheduler-observed';
+  const retrying = account?.windows.some((window) => window.state === 'RetryWait');
+  return {
+    ...login,
+    verification,
+    ...(account ? { accountAlias: account.alias } : {}),
+    message:
+      verification === 'pending'
+        ? `Credential saved for ${name}. Waiting for the scheduler to observe its quota. Saving a credential does not immediately confirm that the account can serve requests.`
+        : verification === 'auth-blocked'
+          ? `Credential saved for ${name}, but the scheduler still reports an authentication block. The sign-in was saved; connection verification is still pending. Check scheduler status again before signing in repeatedly.`
+          : retrying
+            ? `Credential saved for ${name}. The scheduler no longer reports an authentication block. A quota wake-up is waiting to retry; that is separate from sign-in.`
+            : `Credential saved for ${name}. The scheduler has observed the account and no longer reports an authentication block.`,
+  };
+}
+
+export async function verifyLoginStatus(login, readAccounts) {
+  if (login.state !== 'succeeded') return login;
+  try {
+    return verifySavedLogin(login, await readAccounts());
+  } catch {
+    return {
+      ...login,
+      verification: 'pending',
+      message:
+        'Credential saved on the server. Scheduler status is temporarily unavailable, so connection verification is pending. Check scheduler status again.',
+    };
+  }
 }

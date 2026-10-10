@@ -18,6 +18,7 @@ style.md
 
 node_modules
 __pycache__/
+.runtime/
 dist
 dist-ssr
 *.local

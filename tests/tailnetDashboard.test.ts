@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import http from 'node:http';
 // @ts-expect-error Standalone server modules intentionally run directly in Node.
-import { parseStatus, parseLogin } from '../server/status.mjs';
+import { parseStatus, parseLogin, verifySavedLogin, verifyLoginStatus } from '../server/status.mjs';
 // @ts-expect-error Standalone server modules intentionally run directly in Node.
 import { handler } from '../server/dashboard.mjs';
+import { checkLoginTarget } from '../src/features/tailnet/login';
+import type { LoginResult } from '../src/features/tailnet/types';
 
 const fixture = `cliproxy: active
 claude-quota-probe.timer: active
@@ -61,6 +63,7 @@ describe('tailnet quota adapter', () => {
       parseLogin('device URL: https://auth.openai.com/codex/device\ndevice code: ABCD-EFGH')
     ).toEqual({
       state: 'waiting',
+      provider: 'codex',
       url: 'https://auth.openai.com/codex/device',
       code: 'ABCD-EFGH',
       message: 'Complete sign-in in your browser, then check the result.',
@@ -69,6 +72,89 @@ describe('tailnet quota adapter', () => {
       JSON.stringify(parseLogin('state: succeeded\nsaved credential: secret-account-name.json'))
     ).not.toContain('secret-account');
     expect(parseLogin('state: failed or cancelled (no credential was saved)').state).toBe('failed');
+  });
+
+  test('a saved credential is not presented as scheduler-confirmed while auth is blocked', () => {
+    const login = parseLogin(
+      'state: succeeded\nsaved credential: codex-0123-example@example.invalid-team.json'
+    );
+    const { data } = parseStatus(fixture);
+    const result = verifySavedLogin(login, data.accounts);
+    expect(result.state).toBe('succeeded');
+    expect(result.provider).toBe('codex');
+    expect(result.accountId).toBe(data.accounts[0].id);
+    expect(result.verification).toBe('auth-blocked');
+    expect(result.message).toContain('connection verification is still pending');
+    expect(JSON.stringify(result)).not.toContain('example@example.invalid');
+  });
+
+  test('a wake-up retry after reauthentication is distinguished from an auth block', () => {
+    const login = parseLogin(
+      'state: succeeded\nsaved credential: codex-0123-example@example.invalid-team.json'
+    );
+    const { data } = parseStatus(fixture.replaceAll('AuthBlocked', 'RetryWait'));
+    const result = verifySavedLogin(login, data.accounts);
+    expect(result.verification).toBe('scheduler-observed');
+    expect(result.message).toContain('no longer reports an authentication block');
+    expect(result.message).toContain('wake-up is waiting to retry');
+  });
+
+  test('a newly saved account awaits scheduler observations instead of reporting connection success', () => {
+    const login = parseLogin(
+      'state: succeeded\nsaved credential: codex-9999-new@example.invalid-plus.json'
+    );
+    const result = verifySavedLogin(login, parseStatus(fixture).data.accounts);
+    expect(result.verification).toBe('pending');
+    expect(result.message).toContain('does not immediately confirm');
+    expect(verifySavedLogin({ state: 'waiting' }, []).state).toBe('waiting');
+  });
+
+  test('scheduler read failure preserves saved sign-in and offers another verification check', async () => {
+    const login = parseLogin(
+      'state: succeeded\nsaved credential: codex-0123-example@example.invalid-team.json'
+    );
+    const result = await verifyLoginStatus(login, async () => {
+      throw new Error('helper unavailable');
+    });
+    expect(result.state).toBe('succeeded');
+    expect(result.accountId).toBe(login.accountId);
+    expect(result.verification).toBe('pending');
+    expect(result.message).toContain('Scheduler status is temporarily unavailable');
+    const confirmed = await verifyLoginStatus(
+      login,
+      async () => parseStatus(fixture.replaceAll('AuthBlocked', 'WaitingReset')).data.accounts
+    );
+    expect(confirmed.verification).toBe('scheduler-observed');
+  });
+});
+
+describe('reconnect account selection', () => {
+  const saved: LoginResult = {
+    state: 'succeeded',
+    provider: 'codex',
+    accountId: 'plus',
+    accountAlias: 'Plus',
+    verification: 'scheduler-observed',
+    message: 'Credential saved for Plus.',
+  };
+
+  test('signing in to another account does not confirm the selected subscription reconnect', () => {
+    const result = checkLoginTarget(saved, 'codex', { id: 'team', alias: 'Team' });
+    expect(result.state).toBe('wrong-account');
+    expect(result.verification).toBe('pending');
+    expect(result.message).toContain('you selected Team');
+  });
+
+  test('preserves scheduler verification for the intended account', () => {
+    expect(checkLoginTarget(saved, 'codex', { id: 'plus', alias: 'Plus' })).toBe(saved);
+  });
+
+  test('adding an account accepts any account for the chosen provider', () => {
+    expect(checkLoginTarget(saved, 'codex')).toBe(saved);
+  });
+
+  test('an old sign-in result from another provider cannot confirm reconnect', () => {
+    expect(() => checkLoginTarget(saved, 'claude')).toThrow('The last sign-in was for Codex');
   });
 });
 

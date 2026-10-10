@@ -20,6 +20,7 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 - Filters and searches accounts; displays the configured Codex routing order.
 - Reads the existing scheduler and Claude timer through the installed `cliproxy-quota status` helper.
 - Supports deliberate Codex device sign-in and Claude reauthentication with a callback paste step.
+- Reconnect checks the selected account, refreshes scheduler status after sign-in, and keeps the result visible. Saved credentials, pending verification, authentication blocks, and quota wake-up retries have distinct feedback.
 - Reviews alias/priority changes before saving. A save invokes the installed helper and briefly restarts the proxy.
 - Offers a token-free tailnet API on 8318 while preserving the existing HTTPS 8443 gateway and T3 on HTTPS 443.
 
@@ -39,6 +40,8 @@ bash deploy/install-user-service.sh
 ```
 
 The tailnet build replaces only the HTML entry with `src/tailnet-main.tsx` and produces a single `dist/index.html`. `bun run build` still builds upstream’s v8 Management API frontend. Always run `build:tailnet` last before deploying this dashboard.
+
+The installer atomically copies the built page into `.runtime/dashboard.html`, which the service serves through `DASHBOARD_HTML`. Later verification builds do not replace the running dashboard’s page; a new page goes live only when the installer runs.
 
 ```sh
 systemctl --user status cliproxy-dashboard.service
