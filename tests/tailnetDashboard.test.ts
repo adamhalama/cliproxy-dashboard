@@ -28,7 +28,9 @@ describe('tailnet quota adapter', () => {
     expect(data.accounts).toHaveLength(3);
     const [team, buffer, claude] = data.accounts;
     expect(team.blocked).toBe(true);
-    expect(team.windows[1].usedPercent).toBe(21);
+    expect(team.windows[1].usedPercent).toBeNull();
+    expect(team.quotaSource).toBe('scheduler-baseline');
+    expect(buffer.windows[0].usedPercent).toBeNull();
     expect(team.priority).toBe(100);
     expect(team.lastCheckedAt).toBeNull();
     expect(buffer.windows.map((window: { kind: string }) => window.kind)).toEqual(['weekly']);

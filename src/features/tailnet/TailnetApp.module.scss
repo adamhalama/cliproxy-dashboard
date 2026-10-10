@@ -825,6 +825,23 @@
     color: #87916f;
   }
 }
+.usageToolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-bottom: 16px;
+
+  > span {
+    font-size: 11px;
+    color: var(--console-muted);
+  }
+}
+.usageCheckError {
+  color: var(--console-amber);
+  font-size: 10px;
+  margin-top: 4px;
+}
 .attentionNotice,
 .errorNotice,
 .successNotice,

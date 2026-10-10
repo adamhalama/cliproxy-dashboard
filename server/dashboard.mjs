@@ -65,6 +65,22 @@ async function getStatus(force = false) {
   return pendingSnapshot;
 }
 
+function dashboardStatus(data) {
+  return {
+    ...data,
+    gatewayUrl: `http://${tailnetHost}:${port}`,
+    dashboardUrl: `http://${tailnetHost}:${port}`,
+    source:
+      'Codex usage comes from provider quota checks when available; scheduler activation baselines are not usage readings. Claude usage is checked every five minutes. Refresh snapshot reads saved observations, not provider APIs.',
+    policy: {
+      mode: 'Fill first',
+      description:
+        'Codex prefers higher-priority accounts, ordered within the same priority by earliest weekly reset. The saved policy uses Plus and Team at priority 100, with the weekly-only Pro Lite seat at priority 0 as overflow. See account rows for current priorities. Auth-blocked accounts are unavailable.',
+      resetProbing: true,
+    },
+  };
+}
+
 function respond(res, code, value) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(value));
@@ -141,19 +157,7 @@ export async function handler(req, res) {
       if (url.pathname === '/api/health') return respond(res, 200, { status: 'ok' });
       if (url.pathname === '/api/status') {
         const { data } = await getStatus();
-        return respond(res, 200, {
-          ...data,
-          gatewayUrl: `http://${tailnetHost}:${port}`,
-          dashboardUrl: `http://${tailnetHost}:${port}`,
-          source:
-            'Saved scheduler reset-probe baselines; Codex usage may lag actual consumption. Claude usage is checked every five minutes, including reported weekly and model limits. Refresh reads saved state, not provider APIs.',
-          policy: {
-            mode: 'Fill first',
-            description:
-              'Codex prefers higher-priority accounts, ordered within the same priority by earliest weekly reset. The saved policy uses Plus and Team at priority 100, with the weekly-only Pro Lite seat at priority 0 as overflow. See account rows for current priorities. Auth-blocked accounts are unavailable.',
-            resetProbing: true,
-          },
-        });
+        return respond(res, 200, dashboardStatus(data));
       }
       if (url.pathname === '/api/login/status') {
         const login = parseLogin(await helper('login-status'));
@@ -192,6 +196,14 @@ export async function handler(req, res) {
   mutationActive = true;
   nextMutationAt = Date.now() + 3000;
   try {
+    if (url.pathname === '/api/quota/codex/refresh') {
+      if (!(await getStatus()).data.codexUsageRefreshAvailable)
+        return respond(res, 409, {
+          error: 'Install the Codex usage collector before refreshing provider quota.',
+        });
+      await helper('codex-usage-refresh');
+      return respond(res, 200, dashboardStatus((await getStatus(true)).data));
+    }
     if (url.pathname === '/api/accounts/priority') {
       const status = await getStatus();
       const filename = status.authFiles.get(body.id);

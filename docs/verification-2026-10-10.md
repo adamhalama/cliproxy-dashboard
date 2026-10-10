@@ -109,3 +109,46 @@ repository and this dashboard's README. Real weekly/model/extra Claude data
 cannot be verified until that step. No OAuth login, routing mutation, proxy
 restart, or reboot was performed for this follow-up. The UI is already deployed
 and accepts the richer status output once the root upgrade is installed.
+
+## Codex current usage correction
+
+The persisted scheduler `probe_windows.baseline.usage` values are activation
+baselines, not its in-memory current usage. A small real streaming request to
+`gpt-6.1-sol` completed HTTP 200 with 314 input and 5 output tokens (319 total),
+confirming successful consumption. Its responding account and percent change
+were not inferred. No large consumption test was performed.
+
+A read-only Codex provider collector, sanitized helper export and administrator
+installer are published in the setup repository at `3079e81`. Provider readings
+replace baseline windows, carry success and attempt times, and remain visibly
+stale after failed checks. Baselines cannot contribute to quota bars or totals;
+missing, stale and auth-blocked capacity is omitted from current totals.
+
+- Final `bun run verify`: 1,608 tests passed, zero failures; lint, TypeScript,
+  and upstream production build passed.
+- Final `bun run build:tailnet`: TypeScript and single-file build passed.
+- Parent installer `--check`: four synthetic Python collector/contract cases
+  and the Claude export contract passed. Tests cover endpoint/header contract,
+  redirect rejection, weekly-only windows, zero versus missing, preserved last
+  success after error, credentials remaining unchanged, lock and file mode,
+  and collector -> actual helper jq allowlist -> dashboard adapter.
+- T3 browser: real helper output displays unavailable Codex usage and retained
+  reset schedules without 300% capacity. Synthetic provider scenarios show
+  83% current capacity from one fresh account, omit stale/baseline capacity,
+  retain stale meters, and show provider observation and failed-attempt times.
+  One explicit refresh updated the displayed reading to 80% and surfaced a
+  partial account failure. Desktop and iPhone-size views have no page overflow.
+- The dashboard user service was deployed and is active. Live port 8318 was
+  checked in the collaborative browser with no synthetic fixture remaining.
+  Token-free model list returned 33 models; cross-origin rejection passed.
+  Temporary port 8319 was stopped. The live refresh endpoint returns 409 with
+  an install explanation when its collector is absent.
+
+At this deployment the Codex root-owned collector is **not yet installed**.
+The server account's sudo rule permits fixed helpers, not service installation.
+An administrator must run the documented `server/install-codex-usage.sh`; then
+provider quota collection and the dedicated refresh button become available.
+Real Codex provider percentages have not yet been verified. The earlier Claude
+upgrade has since been installed: live weekly usage was 12% used and five-hour
+usage 41% used at the 18:35 Copenhagen observation. No login, routing mutation,
+proxy restart, Serve change or reboot occurred in this correction.

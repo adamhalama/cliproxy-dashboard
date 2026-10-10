@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parseClaudeUsage } from './claude-usage.mjs';
+import { parseCodexUsage } from './codex-usage.mjs';
 
 export function accountId(filename) {
   return createHash('sha256').update(filename).digest('hex').slice(0, 20);
@@ -21,10 +22,14 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   let proxy = 'unknown';
   let claudeTimer = 'unknown';
   let claudeUsage;
+  let codexUsage = [];
+  let codexUsageRefreshAvailable = false;
   for (const line of output.split('\n')) {
     if (line.startsWith('cliproxy: ')) proxy = line.slice(10).trim();
     else if (line.startsWith('claude-quota-probe.timer: ')) claudeTimer = line.slice(25).trim();
     else if (line.startsWith('claude usage: ')) claudeUsage = parseClaudeUsage(line.slice(14));
+    else if (line === 'codex usage collector: available') codexUsageRefreshAvailable = true;
+    else if (line.startsWith('codex usage: ')) codexUsage = parseCodexUsage(line.slice(13));
     else if (/^codex-[A-Za-z0-9._@+-]+\.json$/.test(line)) {
       const plan = line.includes('prolite')
         ? 'Business Pro Lite'
@@ -50,6 +55,7 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
         blocked: false,
         windows: [],
         lastCheckedAt: null,
+        quotaSource: 'scheduler-baseline',
       };
       accounts.push(account);
       authFiles.set(account.id, line);
@@ -61,12 +67,14 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
         account.inRoster = match[3] === 'true';
       }
     } else if (account && /^  (five_hour|weekly):/.test(line)) {
-      const match = line.match(/^  (five_hour|weekly): ([A-Za-z]+), used ([\d.]+)%, resets (.+)$/);
+      const match = line.match(
+        /^  (five_hour|weekly): ([A-Za-z]+), used ([\d.]+|null)%, resets (.+)$/
+      );
       if (match) {
         account.windows.push({
           kind: match[1],
           state: match[2],
-          usedPercent: percentage(match[3]),
+          usedPercent: null,
           resetAt: timestamp(match[4]),
         });
         if (/AuthBlocked|Disabled|Failed|Error/i.test(match[2])) account.blocked = true;
@@ -111,6 +119,23 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
         });
     }
   }
+  for (const entry of codexUsage) {
+    const account = accounts.find(
+      (account) => account.provider === 'codex' && account.id === entry.id
+    );
+    if (!account) continue;
+    const { id, windows, ...observation } = entry;
+    account.codexUsage = observation;
+    if (!entry.checkedAt) continue;
+    account.quotaSource = 'provider';
+    account.lastCheckedAt = entry.checkedAt;
+    const stale =
+      entry.status === 'error' ||
+      Date.parse(fetchedAt) - Date.parse(entry.checkedAt) > 10 * 60 * 1000;
+    // Replace the usage window set. Never fill absent provider windows with
+    // scheduler baselines or carry a prior window's percentage into a new one.
+    account.windows = windows.map((window) => ({ ...window, state: stale ? 'stale' : 'active' }));
+  }
   const claude = accounts.find((entry) => entry.provider === 'claude');
   if (claude && claudeUsage) {
     claude.claudeUsage = claudeUsage;
@@ -132,7 +157,10 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
     }
   }
   if (proxy === 'unknown') throw new Error('Quota helper returned an unreadable status.');
-  return { data: { fetchedAt, proxy, claudeTimer, accounts }, authFiles };
+  return {
+    data: { fetchedAt, proxy, claudeTimer, accounts, codexUsageRefreshAvailable },
+    authFiles,
+  };
 }
 
 export function parseLogin(output) {

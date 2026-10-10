@@ -14,8 +14,9 @@ with no dashboard password or client API key prompt.
 Do not enable management, access credential/state files directly, change the routing policy
 as part of deployment, replace T3's Serve 443 or the API's Serve 8443, or reboot the machine.
 Tailnet UI copy is intentionally English and separate from upstream translation keys.
-Preserve hash routes and the single-file build. Quota values are saved reset-probe baselines,
-not guaranteed live usage; absent windows must stay unavailable. Sign-in and priority writes
+Preserve hash routes and the single-file build. Codex usage comes from the read-only provider collector when installed; saved
+reset-probe baselines are schedule evidence only and must never become usage.
+Failed/old provider observations stay visibly stale; absent windows stay unavailable. Sign-in and priority writes
 must be explicit user actions. Run `bun run verify`, `bun run build:tailnet`, and verify the
 tailnet routes in the collaborative browser before deploying the systemd user service.
 

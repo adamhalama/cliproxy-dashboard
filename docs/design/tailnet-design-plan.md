@@ -31,3 +31,12 @@ On mobile, the sidebar becomes an explicit collapsible navigation region and eac
 ## Review against brief
 
 The reference explicitly asks for near-black/olive dashboard chrome, so this palette is retained rather than replaced with an unrelated aesthetic. Avoid generic chart cards and fabricated analytics: quota bars are the primary visual because they answer the actual remaining-budget question. The memorable detail is the shared provider capacity panel and precisely aligned ledger. Do not show a “currently draining” account because the cache does not establish that fact. State the snapshot source, stale windows, blocked authentication, and unavailable Claude weekly data plainly. Routing is the configured policy and an estimate, never invented execution telemetry.
+
+## Current Codex observations
+
+Codex quota meters use provider observations only. Scheduler activation baselines
+supply reset schedules without percentages. The ledger shows the provider check
+age, marks retained readings stale after failed checks, and offers a separate
+**Refresh Codex usage** action when the collector is installed. The snapshot
+header identifies saved observations, since its 30-second reload does not query
+provider APIs. Summary totals omit baseline, missing, stale and blocked capacity.

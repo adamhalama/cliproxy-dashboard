@@ -41,6 +41,13 @@ export type Account = {
   windows: QuotaWindow[];
   lastCheckedAt: string | null;
   claudeUsage?: ClaudeUsage;
+  quotaSource?: 'scheduler-baseline' | 'provider';
+  codexUsage?: {
+    checkedAt: string | null;
+    attemptedAt: string | null;
+    status: 'ok' | 'error';
+    error: string | null;
+  };
 };
 
 export type DashboardStatus = {
@@ -51,6 +58,7 @@ export type DashboardStatus = {
   gatewayUrl: string;
   dashboardUrl: string;
   source: string;
+  codexUsageRefreshAvailable?: boolean;
   policy: {
     mode: string;
     description: string;

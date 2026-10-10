@@ -25,7 +25,15 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 - Reviews alias/priority changes before saving. A save invokes the installed helper and briefly restarts the proxy.
 - Offers a token-free tailnet API on 8318 while preserving the existing HTTPS 8443 gateway and T3 on HTTPS 443.
 
-The dashboard’s refresh reads **saved scheduler reset-probe baselines**, not provider APIs. Codex consumption can be newer than those baselines, and Codex has no observation timestamp in the helper output. Claude is sampled by its five-minute timer; its usage section shows all reported limits after the collector upgrade below. Missing values and manual-reset balances stay unavailable. The configured routing order is explanatory, not evidence of which account handled the last request.
+The dashboard’s ordinary refresh reads **saved provider observations**. Codex usage comes from a read-only collector, checked every five minutes or with **Refresh Codex usage**. Each account shows its successful observation time and failed check state. Scheduler reset-probe baselines provide schedules only, never percentages. Missing, stale and blocked readings do not contribute to current Codex capacity. Claude is sampled by its five-minute timer and shows all reported limits after its collector upgrade below. Missing values and manual-reset balances stay unavailable. The configured routing order is explanatory, not evidence of which account handled the last request.
+
+An administrator installs the Codex collector without restarting the proxy:
+
+```bash
+sudo bash /srv/agents/easycliproxy-quota-setup/server/install-codex-usage.sh
+```
+
+Details and synthetic collector/helper contract tests: [collector documentation](https://github.com/adamhalama/easycliproxy-quota-setup/blob/main/server/CODEX-USAGE.md).
 
 Deployment leaves the established policy intact: Plus and Team priority 100, earliest weekly reset first, Pro Lite priority 0 as weekly-only overflow, and existing window activation. The proxy’s management API remains disabled. The adapter never reads OAuth credentials, proxy config, or scheduler files directly.
 

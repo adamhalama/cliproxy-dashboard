@@ -213,6 +213,14 @@ function remaining(window?: QuotaWindow): number | null {
   return Math.max(0, Math.min(100, 100 - window.usedPercent));
 }
 
+function accountWindow(account: Account, kind: QuotaWindow['kind']): QuotaWindow | undefined {
+  const window = account.windows.find((window) => window.kind === kind);
+  if (window && account.provider === 'codex' && account.quotaSource !== 'provider') {
+    return { ...window, usedPercent: null };
+  }
+  return window;
+}
+
 function quotaState(window: QuotaWindow | undefined, now: number): 'fresh' | 'stale' | 'unknown' {
   if (!window || remaining(window) === null) return 'unknown';
   if (
@@ -238,13 +246,15 @@ function QuotaMeter({
   kind,
   now,
   blocked = false,
+  scheduleOnly = false,
 }: {
   window?: QuotaWindow;
   kind: QuotaWindow['kind'];
   now: number;
   blocked?: boolean;
+  scheduleOnly?: boolean;
 }) {
-  const value = blocked ? null : remaining(window);
+  const value = blocked || scheduleOnly ? null : remaining(window);
   const state = quotaState(window, now);
   const stale = state === 'stale' || blocked;
   return (
@@ -272,11 +282,17 @@ function QuotaMeter({
       >
         {blocked
           ? 'Unavailable · sign-in required'
-          : value === null
-            ? 'Not reported'
-            : timeUntil(window?.resetAt ?? null, now)}
+          : scheduleOnly
+            ? timestamp(window?.resetAt ?? null)
+              ? `Scheduled reset ${dateLabel(window?.resetAt ?? null)}`
+              : 'Reset schedule unavailable'
+            : value === null
+              ? 'Not reported'
+              : timeUntil(window?.resetAt ?? null, now)}
       </div>
-      {state === 'stale' && !blocked && <span className={styles.staleLabel}>Stale snapshot</span>}
+      {state === 'stale' && !blocked && !scheduleOnly && (
+        <span className={styles.staleLabel}>Cached usage; needs update</span>
+      )}
       {!blocked && window?.state === 'RetryWait' && (
         <span
           className={styles.staleLabel}
@@ -289,7 +305,7 @@ function QuotaMeter({
   );
 }
 
-function Summary({
+export function Summary({
   provider,
   accounts,
   now,
@@ -301,18 +317,18 @@ function Summary({
   const kind = provider === 'claude' ? 'five_hour' : 'weekly';
   const windows = accounts.map((account) => ({
     account,
-    window: account.windows.find((window) => window.kind === kind),
+    window: accountWindow(account, kind),
   }));
   const observed = windows.filter(
-    (item) => !item.account.blocked && remaining(item.window) !== null
+    (item) => !item.account.blocked && quotaState(item.window, now) === 'fresh'
   );
   const sum = observed.reduce((total, item) => total + (remaining(item.window) ?? 0), 0);
   const resets = observed
     .map((item) => timestamp(item.window?.resetAt ?? null))
     .filter((time) => time > now)
     .sort((a, b) => a - b);
-  const stale = observed.filter(
-    (item) => item.account.blocked || quotaState(item.window, now) === 'stale'
+  const stale = windows.filter(
+    (item) => !item.account.blocked && quotaState(item.window, now) === 'stale'
   ).length;
   return (
     <section className={styles.providerSummary} aria-label={`${providerNames[provider]} summary`}>
@@ -326,7 +342,11 @@ function Summary({
         </span>
       </div>
       <span className={styles.summaryLabel}>
-        {kind === 'weekly' ? 'Weekly baseline remaining' : '5-hour capacity remaining'}
+        {kind === 'weekly'
+          ? observed.length
+            ? 'Weekly remaining'
+            : 'Weekly usage unavailable'
+          : '5-hour capacity remaining'}
       </span>
       <div className={styles.summaryValue}>
         {observed.length ? `${Math.round(sum)}%` : '—'}
@@ -740,6 +760,8 @@ export function TailnetApp() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshingCodex, setRefreshingCodex] = useState(false);
+  const [usageError, setUsageError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [provider, setProvider] = useState<Provider>('all');
   const [sort, setSort] = useState<Sort>('reset');
@@ -773,6 +795,40 @@ export function TailnetApp() {
       }
     }
   }, []);
+  async function refreshCodexUsage() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRefreshing(true);
+    setRefreshingCodex(true);
+    setUsageError('');
+    setNotice('');
+    try {
+      const result = await dashboardApi.refreshCodexUsage();
+      if (alive.current) {
+        setStatus(result);
+        setError('');
+        const codex = result.accounts.filter((account) => account.provider === 'codex');
+        const failed = codex.filter((account) => account.codexUsage?.status === 'error');
+        if (failed.length) {
+          setUsageError(
+            `Could not update usage for ${failed.length} Codex ${failed.length === 1 ? 'account' : 'accounts'}. Available saved observations are shown below.`
+          );
+        } else {
+          setNotice('Codex usage check completed. Reported provider limits are shown below.');
+        }
+      }
+    } catch (error) {
+      if (alive.current)
+        setUsageError(error instanceof Error ? error.message : 'Could not refresh Codex usage.');
+    } finally {
+      inFlight.current = false;
+      if (alive.current) {
+        setRefreshing(false);
+        setRefreshingCodex(false);
+        setNow(Date.now());
+      }
+    }
+  }
   useEffect(() => {
     alive.current = true;
     void refresh();
@@ -807,9 +863,17 @@ export function TailnetApp() {
     setLogin(account.provider);
   }
   const blocked = accounts.filter((account) => account.blocked);
+  const codexVisible =
+    provider !== 'claude' && accounts.some((account) => account.provider === 'codex');
+  const codexBaseline = accounts.some(
+    (account) => account.provider === 'codex' && account.quotaSource !== 'provider'
+  );
   const stale = accounts.filter(
     (account) =>
-      !account.blocked && account.windows.some((window) => quotaState(window, now) === 'stale')
+      !account.blocked &&
+      account.windows.some(
+        (window) => quotaState(accountWindow(account, window.kind), now) === 'stale'
+      )
   );
   const availableProviders = (['codex', 'claude'] as const).filter((value) =>
     accounts.some((account) => account.provider === value)
@@ -825,9 +889,7 @@ export function TailnetApp() {
   );
   function compare(a: Account, b: Account): number {
     const mainWindow = (account: Account) =>
-      account.windows.find(
-        (window) => window.kind === (account.provider === 'claude' ? 'five_hour' : 'weekly')
-      );
+      accountWindow(account, account.provider === 'claude' ? 'five_hour' : 'weekly');
     if (sort === 'priority') return b.priority - a.priority || a.alias.localeCompare(b.alias);
     if (sort === 'remaining')
       return (
@@ -935,22 +997,41 @@ export function TailnetApp() {
                     <div>
                       <AccountIdentity account={account} />
                       <div className={styles.checkedAt} title={dateLabel(account.lastCheckedAt)}>
-                        {account.lastCheckedAt
-                          ? `Checked ${age(account.lastCheckedAt, now).toLowerCase()}`
-                          : 'Observation time unavailable'}
+                        {account.provider === 'codex'
+                          ? account.quotaSource === 'provider'
+                            ? account.lastCheckedAt
+                              ? `Provider usage checked ${age(account.lastCheckedAt, now).toLowerCase()}`
+                              : 'Provider observation time unavailable'
+                            : 'Usage not checked; reset schedule only'
+                          : account.lastCheckedAt
+                            ? `Checked ${age(account.lastCheckedAt, now).toLowerCase()}`
+                            : 'Observation time unavailable'}
                       </div>
+                      {account.provider === 'codex' && account.codexUsage?.status === 'error' && (
+                        <div className={styles.usageCheckError}>
+                          Provider usage check failed
+                          {account.codexUsage.attemptedAt &&
+                            ` ${age(account.codexUsage.attemptedAt, now).toLowerCase()}`}
+                        </div>
+                      )}
                     </div>
                     <QuotaMeter
                       kind="weekly"
-                      window={account.windows.find((window) => window.kind === 'weekly')}
+                      window={accountWindow(account, 'weekly')}
                       now={now}
                       blocked={account.blocked}
+                      scheduleOnly={
+                        account.provider === 'codex' && account.quotaSource !== 'provider'
+                      }
                     />
                     <QuotaMeter
                       kind="five_hour"
-                      window={account.windows.find((window) => window.kind === 'five_hour')}
+                      window={accountWindow(account, 'five_hour')}
                       now={now}
                       blocked={account.blocked}
+                      scheduleOnly={
+                        account.provider === 'codex' && account.quotaSource !== 'provider'
+                      }
                     />
                     <div className={styles.priorityCell}>
                       <span>Priority</span>
@@ -1093,20 +1174,20 @@ export function TailnetApp() {
               onClick={() => void refresh()}
             >
               <Icon name="refresh" className={refreshing ? styles.refreshing : undefined} />
-              {refreshing ? 'Reading snapshot…' : 'Refresh snapshot'}
+              {refreshing && !refreshingCodex ? 'Reading snapshot…' : 'Refresh snapshot'}
             </button>
           </div>
           <div className={styles.snapshotLine}>
             <span>
               <i className={status ? styles.statusDot : styles.statusDotUnknown} />
-              Scheduler snapshot
+              Saved server snapshot
               {status && (
                 <span className={styles.snapshotTime}>
                   read {age(status.fetchedAt, now).toLowerCase()}
                 </span>
               )}
             </span>
-            <span>Auto-refresh every 30s</span>
+            <span>Snapshot read every 30s</span>
           </div>
           {notice && (
             <div className={styles.successNotice} role="status">
@@ -1179,6 +1260,47 @@ export function TailnetApp() {
                     </div>
                   )}
                   {providerTabs}
+                  {codexVisible && codexBaseline && (
+                    <div className={styles.notice}>
+                      <Icon name="alert" />
+                      <div>
+                        <strong>Current Codex usage unavailable</strong>
+                        <p>
+                          Previous percentages were window activation baselines. Only reset
+                          schedules are available for accounts without provider observations.{' '}
+                          {status.codexUsageRefreshAvailable
+                            ? 'Refresh Codex usage to check provider limits.'
+                            : 'The server collector needs an upgrade to report actual usage.'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {codexVisible && status.codexUsageRefreshAvailable && (
+                    <div className={styles.usageToolbar}>
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={refreshing}
+                        onClick={() => void refreshCodexUsage()}
+                      >
+                        <Icon
+                          name="refresh"
+                          className={refreshingCodex ? styles.refreshing : undefined}
+                        />
+                        {refreshingCodex ? 'Checking Codex usage…' : 'Refresh Codex usage'}
+                      </button>
+                      <span>Checks current provider limits</span>
+                    </div>
+                  )}
+                  {codexVisible && usageError && (
+                    <div className={styles.errorNotice} role="alert">
+                      <Icon name="alert" />
+                      <div>
+                        <strong>Codex usage refresh failed</strong>
+                        <p>{usageError}</p>
+                      </div>
+                    </div>
+                  )}
                   {accounts.length > 0 && summary}
                   {page === 'overview' && (
                     <div className={styles.overviewStrip}>
@@ -1258,9 +1380,11 @@ export function TailnetApp() {
                   )}
                   <p className={styles.ledgerNote}>
                     <Icon name="shield" />
-                    Codex percentages come from saved reset-probe baselines and may lag actual
-                    usage. Claude usage is checked every five minutes; only reported limits are
-                    shown. Refresh reads saved state, not provider APIs.
+                    Codex percentages use reported provider limits; reset schedules alone do not
+                    establish remaining usage. Claude usage is checked every five minutes. Refresh
+                    snapshot reads saved state.
+                    {status.codexUsageRefreshAvailable &&
+                      ' Refresh Codex usage checks the provider.'}
                   </p>
                 </>
               )}
