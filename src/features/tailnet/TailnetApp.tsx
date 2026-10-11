@@ -59,6 +59,7 @@ const pages: Record<Page, { label: string; icon: IconName; description: string }
   },
 };
 const providerNames = { codex: 'Codex', claude: 'Claude' };
+const resetCounts = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
   const paths: Record<IconName, ReactNode> = {
@@ -241,6 +242,35 @@ function tone(value: number | null): string {
         : styles.good;
 }
 
+function manualResetState(account: Account, now: number): 'fresh' | 'stale' | 'unknown' {
+  if (account.codexUsage?.manualResets?.availableCount == null) return 'unknown';
+  const checked = timestamp(account.codexUsage.checkedAt);
+  if (!checked) return 'unknown';
+  return account.blocked || account.codexUsage.status === 'error' || now - checked > 10 * 60 * 1000
+    ? 'stale'
+    : 'fresh';
+}
+
+export function ManualResets({ account, now }: { account: Account; now: number }) {
+  const state = manualResetState(account, now);
+  const credits = account.codexUsage?.manualResets;
+  return (
+    <div className={styles.manualResets}>
+      <span>Manual resets</span>
+      <strong>
+        {state === 'unknown'
+          ? 'Not reported'
+          : `${resetCounts.format(credits!.availableCount!)} available`}
+      </strong>
+      {state === 'stale' ? (
+        <span className={styles.amberText}>Cached; needs update</span>
+      ) : state === 'fresh' && credits?.applicableAvailableCount != null ? (
+        <span>{resetCounts.format(credits.applicableAvailableCount)} applicable now</span>
+      ) : null}
+    </div>
+  );
+}
+
 function QuotaMeter({
   window,
   kind,
@@ -330,6 +360,11 @@ export function Summary({
   const stale = windows.filter(
     (item) => !item.account.blocked && quotaState(item.window, now) === 'stale'
   ).length;
+  const resetAccounts = accounts.filter((account) => manualResetState(account, now) === 'fresh');
+  const resetCount = resetAccounts.reduce(
+    (total, account) => total + account.codexUsage!.manualResets!.availableCount!,
+    0
+  );
   return (
     <section className={styles.providerSummary} aria-label={`${providerNames[provider]} summary`}>
       <div className={styles.summaryHeading}>
@@ -374,6 +409,17 @@ export function Summary({
           <span>{accounts.length - observed.length} unavailable</span>
         )}
       </div>
+      {provider === 'codex' && (
+        <div className={styles.summaryResets}>
+          <span>Manual resets</span>
+          <strong>
+            {resetAccounts.length ? `${resetCounts.format(resetCount)} available` : 'Not reported'}
+          </strong>
+          {resetAccounts.length > 0 && resetAccounts.length < accounts.length && (
+            <span>{accounts.length - resetAccounts.length} unavailable</span>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -1014,6 +1060,7 @@ export function TailnetApp() {
                             ` ${age(account.codexUsage.attemptedAt, now).toLowerCase()}`}
                         </div>
                       )}
+                      {account.provider === 'codex' && <ManualResets account={account} now={now} />}
                     </div>
                     <QuotaMeter
                       kind="weekly"

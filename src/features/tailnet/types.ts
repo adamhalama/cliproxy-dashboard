@@ -47,6 +47,10 @@ export type Account = {
     attemptedAt: string | null;
     status: 'ok' | 'error';
     error: string | null;
+    manualResets?: {
+      availableCount: number | null;
+      applicableAvailableCount: number | null;
+    } | null;
   };
 };
 

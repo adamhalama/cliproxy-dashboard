@@ -16,7 +16,7 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 ## What it does
 
 - Dark sidebar, provider tabs, combined quota summaries, and account ledgers modeled on the supplied CPAMC screenshots.
-- Shows remaining quota, reset countdowns, weekly-only seats, blocked sign-ins, and unavailable readings.
+- Shows remaining quota, reset countdowns, manual reset allowances, weekly-only seats, blocked sign-ins, and unavailable readings.
 - Shows Claude's reported weekly and model-specific usage, reset times, dollar credit pools, and extra-usage spending and monthly limits. Values are sampled, with stale and missing readings labeled.
 - Filters and searches accounts; displays the configured Codex routing order.
 - Reads the existing scheduler and Claude timer through the installed `cliproxy-quota status` helper.
@@ -25,7 +25,7 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 - Reviews alias/priority changes before saving. A save invokes the installed helper and briefly restarts the proxy.
 - Offers a token-free tailnet API on 8318 while preserving the existing HTTPS 8443 gateway and T3 on HTTPS 443.
 
-The dashboard’s ordinary refresh reads **saved provider observations**. Codex usage comes from a read-only collector, checked every five minutes or with **Refresh Codex usage**. Each account shows its successful observation time and failed check state. Scheduler reset-probe baselines provide schedules only, never percentages. Missing, stale and blocked readings do not contribute to current Codex capacity. Claude is sampled by its five-minute timer and shows all reported limits after its collector upgrade below. Missing values and manual-reset balances stay unavailable. The configured routing order is explanatory, not evidence of which account handled the last request.
+The dashboard’s ordinary refresh reads **saved provider observations**. Codex usage comes from a read-only collector, checked every five minutes or with **Refresh Codex usage**. Each account shows its successful observation time and failed check state. Scheduler reset-probe baselines provide schedules only, never percentages. Missing, stale and blocked readings do not contribute to current Codex capacity. Claude is sampled by its five-minute timer and shows all reported limits after its collector upgrade below. Missing values stay unavailable; manual reset balances require the collector upgrade below. The configured routing order is explanatory, not evidence of which account handled the last request.
 
 An administrator installs the Codex collector without restarting the proxy:
 
@@ -78,6 +78,22 @@ systemctl --user daemon-reload
 ```
 
 No proxy restart, gateway change, or server reboot is needed for deployment or rollback.
+
+## Codex manual reset reporting
+
+The Codex summary and each account row show reported manual reset allowances,
+including the applicable count when supplied. Cached allowances stay labeled
+and do not contribute to summary totals. Missing balances show **Not reported**.
+No reset credits are spent by viewing or refreshing the dashboard.
+
+Upgrade an existing Codex collector from an administrator session:
+
+```sh
+sudo bash /srv/agents/easycliproxy-quota-setup/server/install-codex-manual-resets.sh
+```
+
+This updates the read-only collector and its sanitized export, preserves other
+installed helper changes, and refreshes usage without restarting the proxy.
 
 ## Claude usage collector upgrade
 

@@ -100,4 +100,30 @@ describe('current Codex usage', () => {
     expect(parseCodexUsage(JSON.stringify({ accounts: [{ ...entry, id: filename }] }))).toEqual([]);
     expect(parseCodexUsage(JSON.stringify({ accounts: [entry, entry] }))).toHaveLength(1);
   });
+  test('manual resets survive the status boundary without exporting extra fields', () => {
+    const account = parseStatus(
+      output({
+        ...entry,
+        manualResets: { availableCount: 3, applicableAvailableCount: 0, secret: 'private' },
+      } as typeof entry),
+      checkedAt
+    ).data.accounts[0];
+    expect(account.codexUsage.manualResets).toEqual({
+      availableCount: 3,
+      applicableAvailableCount: 0,
+    });
+    expect(JSON.stringify(account)).not.toContain('private');
+    for (const invalid of [null, '', false, [], {}, -1, 1.5, 'NaN', Number.MAX_SAFE_INTEGER + 1]) {
+      const parsed = parseCodexUsage(
+        JSON.stringify({ accounts: [{ ...entry, manualResets: { availableCount: invalid } }] })
+      );
+      expect(parsed[0].manualResets.availableCount).toBeNull();
+    }
+    expect(
+      parseCodexUsage(
+        JSON.stringify({ accounts: [{ ...entry, manualResets: { availableCount: 0 } }] })
+      )[0].manualResets.availableCount
+    ).toBe(0);
+    expect(parseCodexUsage(JSON.stringify({ accounts: [entry] }))[0].manualResets).toBeNull();
+  });
 });

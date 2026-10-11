@@ -731,6 +731,30 @@
   color: var(--console-dim);
   margin-top: 5px;
 }
+.manualResets,
+.summaryResets {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  color: var(--console-muted);
+  font-size: 11px;
+  line-height: 1.6;
+
+  > strong {
+    color: var(--console-text);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+}
+.manualResets {
+  margin-top: 7px;
+}
+.summaryResets {
+  border-top: 1px solid var(--console-border);
+  padding-top: 10px;
+  margin-top: 12px;
+}
 .badge,
 .healthyBadge,
 .blockedBadge {

@@ -10,6 +10,13 @@ function percent(value) {
   return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
 }
 
+function count(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
 export function parseCodexUsage(output) {
   try {
     const input = JSON.parse(output);
@@ -33,6 +40,13 @@ export function parseCodexUsage(output) {
         checkedAt: timestamp(entry.checkedAt),
         attemptedAt: timestamp(entry.attemptedAt),
         status: entry.status,
+        manualResets:
+          entry.manualResets && typeof entry.manualResets === 'object'
+            ? {
+                availableCount: count(entry.manualResets.availableCount),
+                applicableAvailableCount: count(entry.manualResets.applicableAvailableCount),
+              }
+            : null,
         error:
           typeof entry.error === 'string' &&
           /^(http-\d{3}|provider-unavailable|invalid-quota-or-credential)$/.test(entry.error)
