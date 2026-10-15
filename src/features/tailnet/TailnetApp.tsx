@@ -6,7 +6,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { dashboardApi } from './api';
 import { checkLoginTarget } from './login';
 import { ClaudeUsage } from './ClaudeUsage';
-import type { Account, DashboardStatus, LoginResult, QuotaWindow } from './types';
+import type { Account, DashboardStatus, LoginResult, QuotaWindow, SchedulerPlugin } from './types';
 import styles from './TailnetApp.module.scss';
 
 type Page = 'overview' | 'quota' | 'accounts' | 'routing' | 'connection';
@@ -271,22 +271,34 @@ export function ManualResets({ account, now }: { account: Account; now: number }
   );
 }
 
-function QuotaMeter({
+function reserveOf(account: Account): number {
+  return account.provider === 'codex' ? (account.reserveFiveHourPercent ?? 0) : 0;
+}
+
+export function QuotaMeter({
   window,
   kind,
   now,
   blocked = false,
   scheduleOnly = false,
+  reserve = 0,
+  reserveEnforced = true,
 }: {
   window?: QuotaWindow;
   kind: QuotaWindow['kind'];
   now: number;
   blocked?: boolean;
   scheduleOnly?: boolean;
+  reserve?: number;
+  reserveEnforced?: boolean;
 }) {
   const value = blocked || scheduleOnly ? null : remaining(window);
   const state = quotaState(window, now);
   const stale = state === 'stale' || blocked;
+  // The scheduler stops routing to an account once only its reserve is left.
+  const showReserve = reserve > 0 && !!window;
+  const reserveReached =
+    showReserve && reserveEnforced && state === 'fresh' && value !== null && value <= reserve;
   return (
     <div className={`${styles.quotaMeter} ${stale ? styles.staleMeter : ''}`}>
       <div className={styles.meterHeading}>
@@ -297,14 +309,17 @@ function QuotaMeter({
         </strong>
       </div>
       <div
-        className={`${styles.meterTrack} ${tone(value)}`}
+        className={`${styles.meterTrack} ${tone(value)} ${reserveReached ? styles.reserveHeld : ''}`}
         role={value === null ? undefined : 'meter'}
-        aria-label={`${kind === 'weekly' ? 'Weekly' : '5-hour'} capacity remaining${stale ? ' (cached, needs update)' : ''}`}
+        aria-label={`${kind === 'weekly' ? 'Weekly' : '5-hour'} capacity remaining${showReserve ? `, ${reserve}% kept in reserve` : ''}${stale ? ' (cached, needs update)' : ''}`}
         aria-valuemin={value === null ? undefined : 0}
         aria-valuemax={value === null ? undefined : 100}
         aria-valuenow={value ?? undefined}
       >
         <span style={{ width: `${value ?? 0}%` }} />
+        {showReserve && value !== null && (
+          <i className={styles.reserveZone} style={{ width: `${reserve}%` }} />
+        )}
       </div>
       <div
         className={`${styles.meterCaption} ${stale ? styles.staleCaption : ''}`}
@@ -322,6 +337,22 @@ function QuotaMeter({
       </div>
       {state === 'stale' && !blocked && !scheduleOnly && (
         <span className={styles.staleLabel}>Cached usage; needs update</span>
+      )}
+      {showReserve && (
+        <span
+          className={reserveReached || !reserveEnforced ? styles.reserveAlert : styles.reserveLabel}
+          title={
+            reserveEnforced
+              ? `New requests skip this account once ${reserve}% of its five-hour window is left, until the window resets.`
+              : 'The running scheduler plugin does not enforce this reserve.'
+          }
+        >
+          {!reserveEnforced
+            ? `${reserve}% reserve not enforced`
+            : reserveReached
+              ? 'Reserve reached · paused until reset'
+              : `Keeps ${reserve}% in reserve`}
+        </span>
       )}
       {!blocked && window?.state === 'RetryWait' && (
         <span
@@ -506,26 +537,42 @@ function Modal({
   );
 }
 
-function EditAccount({
+export function EditAccount({
   account,
+  plugin,
+  readOnly = false,
   onClose,
   onSaved,
 }: {
   account: Account;
+  plugin?: SchedulerPlugin | null;
+  readOnly?: boolean;
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
   const [alias, setAlias] = useState(account.alias);
   const [priority, setPriority] = useState(String(account.priority));
+  const savedReserve = account.reserveFiveHourPercent ?? 0;
+  const [reserve, setReserve] = useState(String(savedReserve));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const changed = alias.trim() !== account.alias || Number(priority) !== account.priority;
+  // A reserve is editable only while the running plugin enforces it; older plugins drop it.
+  const reserveEditable = !!plugin?.reserveEnforced && account.reserveFiveHourPercent != null;
+  const noFiveHourWindow =
+    account.windows.length > 0 && !account.windows.some((window) => window.kind === 'five_hour');
+  const reserveChanged = reserveEditable && Number(reserve) !== savedReserve;
+  const changed =
+    alias.trim() !== account.alias || Number(priority) !== account.priority || reserveChanged;
   async function save(event: FormEvent) {
     event.preventDefault();
     setPending(true);
     setError('');
     try {
-      const result = await dashboardApi.setPriority(account.id, Number(priority), alias.trim());
+      const result = await dashboardApi.saveAccount(account.id, {
+        priority: Number(priority),
+        alias: alias.trim(),
+        ...(reserveChanged ? { reserveFiveHourPercent: Number(reserve) } : {}),
+      });
       onSaved(result.message);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not save this account.');
@@ -572,9 +619,39 @@ function EditAccount({
             Higher values are preferred. Your Plus and Team accounts use 100; ProLite uses 0.
           </span>
         </label>
+        <label>
+          Five-hour reserve
+          <span className={styles.suffixInput}>
+            <input
+              type="number"
+              required
+              min="0"
+              max="99"
+              step="1"
+              value={reserve}
+              disabled={!reserveEditable}
+              onChange={(event) => setReserve(event.target.value)}
+              aria-describedby="reserve-help"
+            />
+            <span aria-hidden="true">%</span>
+          </span>
+          <span id="reserve-help" className={styles.fieldHelp}>
+            {!reserveEditable
+              ? plugin?.version
+                ? `The running scheduler plugin (${plugin.version}) does not enforce reserves.`
+                : 'Reserve enforcement could not be confirmed on the server.'
+              : noFiveHourWindow
+                ? 'This account reports no five-hour window, so a reserve has no effect.'
+                : 'New requests skip this account once this share of its five-hour window is left, until the window resets. Use 0 to turn it off.'}
+          </span>
+        </label>
         <div className={styles.notice}>
           <Icon name="alert" />
-          <p>Saving briefly restarts the proxy. Check the name and priority before you save.</p>
+          <p>
+            {readOnly
+              ? 'This preview is read-only. Make changes in the main dashboard.'
+              : 'Saving briefly restarts the proxy. Check the name, priority, and reserve before you save.'}
+          </p>
         </div>
         {error && (
           <p className={styles.errorText} role="alert">
@@ -585,7 +662,11 @@ function EditAccount({
           <button type="button" className={styles.button} disabled={pending} onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className={styles.primaryButton} disabled={pending || !changed}>
+          <button
+            type="submit"
+            className={styles.primaryButton}
+            disabled={pending || !changed || readOnly}
+          >
             {pending ? 'Saving…' : 'Save changes'}
           </button>
         </div>
@@ -960,6 +1041,10 @@ export function TailnetApp() {
             Number.MAX_SAFE_INTEGER)
     );
   const proxyActive = status?.proxy === 'active';
+  const reserveEnforced = !!status?.schedulerPlugin?.reserveEnforced;
+  const unenforcedReserves = reserveEnforced
+    ? []
+    : accounts.filter((account) => reserveOf(account) > 0);
   const navigate = (target: Page) => {
     window.location.hash = target;
     setPage(target);
@@ -1079,6 +1164,8 @@ export function TailnetApp() {
                       scheduleOnly={
                         account.provider === 'codex' && account.quotaSource !== 'provider'
                       }
+                      reserve={reserveOf(account)}
+                      reserveEnforced={reserveEnforced}
                     />
                     <div className={styles.priorityCell}>
                       <span>Priority</span>
@@ -1203,10 +1290,20 @@ export function TailnetApp() {
             <Icon name="chevron" />
             <strong>{pages[page].label}</strong>
           </div>
-          <span className={styles.tailnetBadge}>
-            <Icon name="shield" />
-            <span>Tailnet only</span>
-          </span>
+          <div className={styles.topbarBadges}>
+            {status?.readOnly && (
+              <span
+                className={styles.previewBadge}
+                title="This instance reads live status but cannot change accounts or the proxy."
+              >
+                Read-only preview
+              </span>
+            )}
+            <span className={styles.tailnetBadge}>
+              <Icon name="shield" />
+              <span>Tailnet only</span>
+            </span>
+          </div>
         </header>
         <main id="main-content" className={styles.main} tabIndex={-1}>
           <div className={styles.pageHeading}>
@@ -1302,6 +1399,31 @@ export function TailnetApp() {
                         onClick={() => navigate('accounts')}
                       >
                         Review accounts
+                        <Icon name="arrow" />
+                      </button>
+                    </div>
+                  )}
+                  {unenforcedReserves.length > 0 && (
+                    <div className={styles.attentionNotice}>
+                      <Icon name="alert" />
+                      <div>
+                        <strong>Five-hour reserves are not enforced</strong>
+                        <p>
+                          {unenforcedReserves.length}{' '}
+                          {unenforcedReserves.length === 1 ? 'account has' : 'accounts have'} a
+                          reserve, but the running scheduler plugin
+                          {status.schedulerPlugin?.version
+                            ? ` (${status.schedulerPlugin.version})`
+                            : ''}{' '}
+                          does not enforce it. These accounts can be used to their limit.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.quietButton}
+                        onClick={() => navigate('routing')}
+                      >
+                        View routing
                         <Icon name="arrow" />
                       </button>
                     </div>
@@ -1477,7 +1599,7 @@ export function TailnetApp() {
                           </span>
                           <small>
                             {account.provider === 'codex'
-                              ? `Priority ${account.priority}`
+                              ? `Priority ${account.priority}${reserveOf(account) > 0 ? ` · ${reserveOf(account)}% 5h reserve` : ''}`
                               : 'Claude subscription'}
                           </small>
                         </div>
@@ -1552,6 +1674,21 @@ export function TailnetApp() {
                         </strong>
                       </div>
                       <div>
+                        <span>Five-hour reserve</span>
+                        <strong>
+                          {reserveEnforced ? (
+                            <span className={styles.healthyBadge}>Enforced</span>
+                          ) : (
+                            <span className={styles.blockedBadge}>Not enforced</span>
+                          )}
+                          <span className={styles.settingDetail}>
+                            {status.schedulerPlugin?.version
+                              ? `Scheduler plugin ${status.schedulerPlugin.version}`
+                              : 'Scheduler plugin version unknown'}
+                          </span>
+                        </strong>
+                      </div>
+                      <div>
                         <span>Reset probing</span>
                         <strong>{status.policy.resetProbing ? 'Enabled' : 'Disabled'}</strong>
                       </div>
@@ -1585,11 +1722,21 @@ export function TailnetApp() {
                           <span>Priority</span>
                           <strong>{account.priority}</strong>
                         </div>
+                        <div className={styles.routingReserve}>
+                          <span>5h reserve</span>
+                          <strong className={reserveOf(account) > 0 ? '' : styles.dimValue}>
+                            {account.reserveFiveHourPercent == null
+                              ? '—'
+                              : reserveOf(account) > 0
+                                ? `${reserveOf(account)}%`
+                                : 'None'}
+                          </strong>
+                        </div>
                         <button
                           type="button"
                           className={styles.quietButton}
                           onClick={() => setEditing(account)}
-                          aria-label={`Edit priority for ${account.alias || account.maskedIdentity}`}
+                          aria-label={`Edit priority and reserve for ${account.alias || account.maskedIdentity}`}
                         >
                           Edit
                           <Icon name="chevron" />
@@ -1601,7 +1748,7 @@ export function TailnetApp() {
                     <Icon name="alert" />
                     Authentication blocks, unavailable quota, and provider eligibility can change
                     which account handles a request. Edit an account only when you want to change
-                    its configured priority.
+                    its configured priority or five-hour reserve.
                   </p>
                 </>
               )}
@@ -1676,6 +1823,8 @@ export function TailnetApp() {
       {editing && (
         <EditAccount
           account={editing}
+          plugin={status?.schedulerPlugin}
+          readOnly={!!status?.readOnly}
           onClose={() => setEditing(null)}
           onSaved={(message) => {
             setEditing(null);

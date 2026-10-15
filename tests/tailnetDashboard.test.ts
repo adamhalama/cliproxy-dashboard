@@ -52,6 +52,41 @@ describe('tailnet quota adapter', () => {
     expect(data.accounts[0].windows[1].resetAt).toBeNull();
   });
 
+  test('reads five-hour reserves and the running scheduler plugin', () => {
+    const output = fixture
+      .replace(
+        'claude-quota-probe.timer: active\n',
+        'claude-quota-probe.timer: active\ncodex scheduler plugin: 0.3.1-local-reserve\n'
+      )
+      .replace('priority: 100  in roster', 'priority: 100  reserve 5h: 15%  in roster')
+      .replace('priority: 0  in roster', 'priority: 0  reserve 5h: 0%  in roster');
+    const { data } = parseStatus(output);
+    const [team, buffer] = data.accounts;
+    expect(team.alias).toBe('Team (5h, first)');
+    expect(team.priority).toBe(100);
+    expect(team.inRoster).toBe(true);
+    expect(team.reserveFiveHourPercent).toBe(15);
+    expect(buffer.reserveFiveHourPercent).toBe(0);
+    expect(data.schedulerPlugin).toEqual({ version: '0.3.1-local-reserve', reserveEnforced: true });
+  });
+
+  test('keeps an unreported reserve and an unknown plugin distinct from enforcement', () => {
+    const { data } = parseStatus(fixture);
+    expect(data.accounts[0].reserveFiveHourPercent).toBeNull();
+    expect(data.schedulerPlugin).toBeNull();
+    const plain = parseStatus(
+      fixture.replace('timer: active\n', 'timer: active\ncodex scheduler plugin: 0.3.1\n')
+    ).data;
+    expect(plain.schedulerPlugin).toEqual({ version: '0.3.1', reserveEnforced: false });
+    const unknown = parseStatus(
+      fixture.replace(
+        'timer: active\n',
+        'timer: active\ncodex scheduler plugin: unknown (no registration logged since the proxy started)\n'
+      )
+    ).data;
+    expect(unknown.schedulerPlugin).toEqual({ version: null, reserveEnforced: false });
+  });
+
   test('does not lose accounts awaiting their first quota observation', () => {
     const output = fixture.replace(
       '  five_hour: AuthBlocked, used 0%, resets 2026-10-09T14:30:02+02:00\n  weekly: AuthBlocked, used 21%, resets 2026-10-14T05:39:56+02:00',
@@ -213,6 +248,39 @@ describe('tailnet HTTP boundary', () => {
       body: JSON.stringify({ url: 'https://attacker.invalid/?code=example' }),
     });
     expect(response.status).toBe(400);
+  });
+
+  test('a read-only preview refuses every action before reaching the helper', async () => {
+    process.env.DASHBOARD_READ_ONLY = '1';
+    // A distinct specifier loads a second module instance that reads the preview setting.
+    const preview = await import('../server/dashboard.mjs?read-only-preview');
+    delete process.env.DASHBOARD_READ_ONLY;
+    const previewServer = http.createServer(preview.handler);
+    await new Promise<void>((resolve) => previewServer.listen(0, '127.0.0.1', resolve));
+    try {
+      const address = previewServer.address();
+      if (!address || typeof address === 'string') throw new Error('Missing test listener');
+      const headers = { Host: 'localhost:8318', 'Content-Type': 'application/json' };
+      const { token } = await fetch(`http://127.0.0.1:${address.port}/api/session`, {
+        headers,
+      }).then((response) => response.json());
+      for (const path of ['/api/accounts/priority', '/api/login/codex']) {
+        const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+          method: 'POST',
+          headers: { ...headers, 'X-Dashboard-Token': token },
+          body: JSON.stringify({
+            id: 'any',
+            priority: 100,
+            alias: 'Plus',
+            reserveFiveHourPercent: 10,
+          }),
+        });
+        expect(response.status).toBe(403);
+        expect((await response.json()).error).toContain('read-only');
+      }
+    } finally {
+      previewServer.close();
+    }
   });
 
   test('blocks cross-origin token-free API calls before reaching the proxy', async () => {
