@@ -12,6 +12,8 @@ const port = Number(process.env.DASHBOARD_PORT || 8318);
 const tailnetIp = process.env.DASHBOARD_TAILNET_IP || '100.89.229.100';
 const tailnetHost = process.env.DASHBOARD_TAILNET_HOST || 't450-server.tail8f1c78.ts.net';
 const ownerLogin = process.env.DASHBOARD_OWNER || 'adamhalama@github';
+// A preview instance reads live status but must never change accounts or the proxy.
+const readOnly = process.env.DASHBOARD_READ_ONLY === '1';
 const token = randomBytes(32).toString('hex');
 const dist =
   process.env.DASHBOARD_HTML || fileURLToPath(new URL('../dist/index.html', import.meta.url));
@@ -68,6 +70,7 @@ async function getStatus(force = false) {
 function dashboardStatus(data) {
   return {
     ...data,
+    readOnly,
     gatewayUrl: `http://${tailnetHost}:${port}`,
     dashboardUrl: `http://${tailnetHost}:${port}`,
     source:
@@ -75,7 +78,7 @@ function dashboardStatus(data) {
     policy: {
       mode: 'Fill first',
       description:
-        'Codex prefers higher-priority accounts, ordered within the same priority by earliest weekly reset. The saved policy uses Plus and Team at priority 100, with the weekly-only Pro Lite seat at priority 0 as overflow. See account rows for current priorities. Auth-blocked accounts are unavailable.',
+        'Codex prefers higher-priority accounts, ordered within the same priority by earliest weekly reset. The saved policy uses Plus and Team at priority 100, with the weekly-only Pro Lite seat at priority 0 as overflow. An account with a five-hour reserve stops serving once only that share of its five-hour window is left, until the window resets. See account rows for current settings. Auth-blocked accounts are unavailable.',
       resetProbing: true,
     },
   };
@@ -179,6 +182,10 @@ export async function handler(req, res) {
     }
   }
   if (req.method !== 'POST') return respond(res, 405, { error: 'Method not allowed.' });
+  if (readOnly)
+    return respond(res, 403, {
+      error: 'This preview is read-only. Make changes in the main dashboard.',
+    });
   if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`)
     return respond(res, 403, { error: 'Cross-origin actions are blocked.' });
   if (!validToken(req.headers['x-dashboard-token']))
@@ -207,19 +214,37 @@ export async function handler(req, res) {
     if (url.pathname === '/api/accounts/priority') {
       const status = await getStatus();
       const filename = status.authFiles.get(body.id);
+      const account = status.data.accounts.find((entry) => entry.id === body.id);
+      const reserve = body.reserveFiveHourPercent;
       if (
         !filename ||
+        !account ||
         !Number.isInteger(body.priority) ||
         Math.abs(body.priority) > 999999 ||
         typeof body.alias !== 'string' ||
-        !/^[A-Za-z0-9 ._()+,/-]{1,64}$/.test(body.alias)
+        !/^[A-Za-z0-9 ._()+,/-]{1,64}$/.test(body.alias) ||
+        (reserve !== undefined && !(Number.isInteger(reserve) && reserve >= 0 && reserve <= 99))
       ) {
         return respond(res, 400, {
           error:
-            'Choose a valid Codex account, integer priority, and alias (1–64 simple characters).',
+            'Choose a valid Codex account, integer priority, alias (1–64 simple characters), and reserve (0–99%).',
         });
       }
-      await helper('set-priority', filename, String(body.priority), body.alias);
+      const settingsChanged = body.priority !== account.priority || body.alias !== account.alias;
+      const reserveChanged =
+        reserve !== undefined && reserve !== (account.reserveFiveHourPercent ?? 0);
+      // Older plugins drop the reserve field when they rewrite their state, so never save one
+      // unless the running plugin enforces it.
+      if (reserveChanged && !status.data.schedulerPlugin?.reserveEnforced)
+        return respond(res, 409, {
+          error:
+            'The running scheduler plugin does not enforce five-hour reserves. Install the reserve plugin first.',
+        });
+      if (!settingsChanged && !reserveChanged)
+        return respond(res, 200, { message: 'No changes to save.' });
+      if (settingsChanged)
+        await helper('set-priority', filename, String(body.priority), body.alias);
+      if (reserveChanged) await helper('set-reserve', filename, String(reserve));
       snapshot = null;
       return respond(res, 200, { message: 'Account settings saved. The proxy has restarted.' });
     }

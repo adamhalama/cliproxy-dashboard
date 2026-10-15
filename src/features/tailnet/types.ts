@@ -36,6 +36,8 @@ export type Account = {
   maskedIdentity: string;
   plan: string;
   priority: number;
+  /** Share of the five-hour window kept unused; null when the helper does not report it. */
+  reserveFiveHourPercent?: number | null;
   inRoster: boolean;
   blocked: boolean;
   windows: QuotaWindow[];
@@ -54,6 +56,12 @@ export type Account = {
   };
 };
 
+export type SchedulerPlugin = {
+  /** Version registered since the proxy last started; null when the helper could not tell. */
+  version: string | null;
+  reserveEnforced: boolean;
+};
+
 export type DashboardStatus = {
   fetchedAt: string;
   proxy: string;
@@ -63,6 +71,8 @@ export type DashboardStatus = {
   dashboardUrl: string;
   source: string;
   codexUsageRefreshAvailable?: boolean;
+  schedulerPlugin?: SchedulerPlugin | null;
+  readOnly?: boolean;
   policy: {
     mode: string;
     description: string;

@@ -24,11 +24,20 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   let claudeUsage;
   let codexUsage = [];
   let codexUsageRefreshAvailable = false;
+  let schedulerPlugin = null;
   for (const line of output.split('\n')) {
     if (line.startsWith('cliproxy: ')) proxy = line.slice(10).trim();
     else if (line.startsWith('claude-quota-probe.timer: ')) claudeTimer = line.slice(25).trim();
     else if (line.startsWith('claude usage: ')) claudeUsage = parseClaudeUsage(line.slice(14));
-    else if (line === 'codex usage collector: available') codexUsageRefreshAvailable = true;
+    else if (line.startsWith('codex scheduler plugin: ')) {
+      // An unknown version is printed as prose; only a bare version proves what is running.
+      const version =
+        line
+          .slice(24)
+          .trim()
+          .match(/^[0-9][A-Za-z0-9.+-]*$/)?.[0] ?? null;
+      schedulerPlugin = { version, reserveEnforced: /-local-reserve\b/.test(version ?? '') };
+    } else if (line === 'codex usage collector: available') codexUsageRefreshAvailable = true;
     else if (line.startsWith('codex usage: ')) codexUsage = parseCodexUsage(line.slice(13));
     else if (/^codex-[A-Za-z0-9._@+-]+\.json$/.test(line)) {
       const plan = line.includes('prolite')
@@ -51,6 +60,7 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
         ),
         plan,
         priority: 0,
+        reserveFiveHourPercent: null,
         inRoster: false,
         blocked: false,
         windows: [],
@@ -60,11 +70,15 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
       accounts.push(account);
       authFiles.set(account.id, line);
     } else if (account && line.startsWith('  alias: ')) {
-      const match = line.match(/^  alias: (.*?)  priority: (-?\d+)  in roster: (true|false)$/);
+      // Helpers before the reserve plugin omit the reserve field; keep that distinct from 0%.
+      const match = line.match(
+        /^  alias: (.*?)  priority: (-?\d+)(?:  reserve 5h: (\d{1,2})%)?  in roster: (true|false)$/
+      );
       if (match) {
         account.alias = match[1] === '-' ? account.plan : match[1];
         account.priority = Number(match[2]);
-        account.inRoster = match[3] === 'true';
+        account.reserveFiveHourPercent = match[3] === undefined ? null : Number(match[3]);
+        account.inRoster = match[4] === 'true';
       }
     } else if (account && /^  (five_hour|weekly):/.test(line)) {
       const match = line.match(
@@ -158,7 +172,7 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   }
   if (proxy === 'unknown') throw new Error('Quota helper returned an unreadable status.');
   return {
-    data: { fetchedAt, proxy, claudeTimer, accounts, codexUsageRefreshAvailable },
+    data: { fetchedAt, proxy, claudeTimer, accounts, codexUsageRefreshAvailable, schedulerPlugin },
     authFiles,
   };
 }

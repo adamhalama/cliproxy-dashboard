@@ -564,6 +564,7 @@
   color: var(--console-amber);
 }
 .meterTrack {
+  position: relative;
   height: 4px;
   background: #2a283b;
   border-radius: 4px;
@@ -813,6 +814,32 @@
 .staleLabel {
   display: inline-block;
   font-size: 9px;
+  color: #cab078;
+}
+// The left part of the five-hour track that the scheduler keeps unused.
+.reserveZone {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: repeating-linear-gradient(
+    115deg,
+    rgba(15, 15, 21, 0.6) 0,
+    rgba(15, 15, 21, 0.6) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  box-shadow: inset -2px 0 0 #b7b4da;
+}
+.reserveHeld > span {
+  opacity: 0.55;
+}
+.reserveLabel,
+.reserveAlert {
+  display: block;
+  font-size: 9px;
+  margin-top: 3px;
+  color: #9f9bc8;
+}
+.reserveAlert {
   color: #cab078;
 }
 .priorityCell {
@@ -1095,6 +1122,50 @@
     }
   }
 }
+.routingReserve > .dimValue {
+  color: var(--console-dim);
+}
+.settingDetail {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--console-dim);
+}
+.topbarBadges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.previewBadge {
+  padding: 4px 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #e2c37a;
+  background: #352e1d;
+  border: 1px solid #514429;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.suffixInput {
+  position: relative;
+  display: block;
+  > input {
+    padding-right: 30px;
+  }
+  > input:disabled {
+    color: var(--console-dim);
+    cursor: not-allowed;
+  }
+  > span {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--console-muted);
+    font-size: 13px;
+    pointer-events: none;
+  }
+}
 .priorityTag {
   display: inline-block;
   margin-left: 7px;
@@ -1109,7 +1180,7 @@
 }
 .routingRow {
   display: grid;
-  grid-template-columns: 20px 20px minmax(150px, 1fr) 170px 66px 54px;
+  grid-template-columns: 20px 20px minmax(150px, 1fr) 170px 66px 74px 54px;
   gap: 17px;
   align-items: center;
   padding: 21px 0;
@@ -1121,7 +1192,8 @@
   font-variant-numeric: tabular-nums;
 }
 .routingReset,
-.routingPriority {
+.routingPriority,
+.routingReserve {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1388,7 +1460,7 @@
     align-items: flex-start;
   }
   .routingRow {
-    grid-template-columns: 15px 18px minmax(100px, 1fr) 135px 45px 45px;
+    grid-template-columns: 15px 18px minmax(100px, 1fr) 135px 45px 60px 45px;
     gap: 10px;
   }
   .pageHeading p {
@@ -1503,6 +1575,11 @@
     .routingPriority {
       grid-column: 4;
       grid-row: 1;
+    }
+    .routingReserve {
+      grid-column: 3;
+      flex-direction: row;
+      gap: 8px;
     }
     > .quietButton {
       grid-column: 4;
@@ -1820,7 +1897,8 @@
       flex-direction: column;
       align-items: flex-start;
     }
-    .routingReset {
+    .routingReset,
+    .routingReserve {
       flex-direction: column;
       gap: 2px;
     }
