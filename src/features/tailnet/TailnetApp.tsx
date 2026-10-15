@@ -893,6 +893,7 @@ export function TailnetApp() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingCodex, setRefreshingCodex] = useState(false);
+  const [refreshingClaude, setRefreshingClaude] = useState(false);
   const [usageError, setUsageError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [provider, setProvider] = useState<Provider>('all');
@@ -961,6 +962,37 @@ export function TailnetApp() {
       }
     }
   }
+  async function refreshClaudeUsage() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setRefreshing(true);
+    setRefreshingClaude(true);
+    setUsageError('');
+    setNotice('');
+    try {
+      const result = await dashboardApi.refreshClaudeUsage();
+      if (alive.current) {
+        setStatus(result);
+        setError('');
+        const claude = result.accounts.find((account) => account.provider === 'claude');
+        setNotice(
+          claude?.claudeUsage?.checkedAt
+            ? 'Claude usage check completed. Reported provider limits are shown below.'
+            : 'Claude usage check completed, but the provider did not return usage data.'
+        );
+      }
+    } catch (error) {
+      if (alive.current)
+        setUsageError(error instanceof Error ? error.message : 'Could not refresh Claude usage.');
+    } finally {
+      inFlight.current = false;
+      if (alive.current) {
+        setRefreshing(false);
+        setRefreshingClaude(false);
+        setNow(Date.now());
+      }
+    }
+  }
   useEffect(() => {
     alive.current = true;
     void refresh();
@@ -997,6 +1029,8 @@ export function TailnetApp() {
   const blocked = accounts.filter((account) => account.blocked);
   const codexVisible =
     provider !== 'claude' && accounts.some((account) => account.provider === 'codex');
+  const claudeVisible =
+    provider !== 'codex' && accounts.some((account) => account.provider === 'claude');
   const codexBaseline = accounts.some(
     (account) => account.provider === 'codex' && account.quotaSource !== 'provider'
   );
@@ -1472,11 +1506,28 @@ export function TailnetApp() {
                       <span>Checks current provider limits</span>
                     </div>
                   )}
-                  {codexVisible && usageError && (
+                  {claudeVisible && status.claudeUsageRefreshAvailable && (
+                    <div className={styles.usageToolbar}>
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={refreshing}
+                        onClick={() => void refreshClaudeUsage()}
+                      >
+                        <Icon
+                          name="refresh"
+                          className={refreshingClaude ? styles.refreshing : undefined}
+                        />
+                        {refreshingClaude ? 'Checking Claude usage…' : 'Refresh Claude usage'}
+                      </button>
+                      <span>Checks current provider limits</span>
+                    </div>
+                  )}
+                  {(codexVisible || claudeVisible) && usageError && (
                     <div className={styles.errorNotice} role="alert">
                       <Icon name="alert" />
                       <div>
-                        <strong>Codex usage refresh failed</strong>
+                        <strong>Provider usage refresh failed</strong>
                         <p>{usageError}</p>
                       </div>
                     </div>
@@ -1561,8 +1612,8 @@ export function TailnetApp() {
                   <p className={styles.ledgerNote}>
                     <Icon name="shield" />
                     Codex percentages use reported provider limits; reset schedules alone do not
-                    establish remaining usage. Claude usage is checked every five minutes. Refresh
-                    snapshot reads saved state.
+                    establish remaining usage. Claude usage is checked every five minutes, and
+                    either provider can be checked on demand. Refresh snapshot reads saved state.
                     {status.codexUsageRefreshAvailable &&
                       ' Refresh Codex usage checks the provider.'}
                   </p>

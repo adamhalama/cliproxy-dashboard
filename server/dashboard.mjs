@@ -74,7 +74,7 @@ function dashboardStatus(data) {
     gatewayUrl: `http://${tailnetHost}:${port}`,
     dashboardUrl: `http://${tailnetHost}:${port}`,
     source:
-      'Codex usage comes from provider quota checks when available; scheduler activation baselines are not usage readings. Claude usage is checked every five minutes. Refresh snapshot reads saved observations, not provider APIs.',
+      'Codex and Claude usage come from provider quota checks when available; scheduler activation baselines are not usage readings. Claude is also checked every five minutes. Refresh snapshot reads saved observations, not provider APIs.',
     policy: {
       mode: 'Fill first',
       description:
@@ -209,6 +209,14 @@ export async function handler(req, res) {
           error: 'Install the Codex usage collector before refreshing provider quota.',
         });
       await helper('codex-usage-refresh');
+      return respond(res, 200, dashboardStatus((await getStatus(true)).data));
+    }
+    if (url.pathname === '/api/quota/claude/refresh') {
+      if (!(await getStatus()).data.claudeUsageRefreshAvailable)
+        return respond(res, 409, {
+          error: 'Install the Claude usage collector before refreshing provider quota.',
+        });
+      await helper('claude-usage-refresh');
       return respond(res, 200, dashboardStatus((await getStatus(true)).data));
     }
     if (url.pathname === '/api/accounts/priority') {
