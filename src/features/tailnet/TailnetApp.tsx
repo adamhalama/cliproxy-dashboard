@@ -283,6 +283,7 @@ export function QuotaMeter({
   scheduleOnly = false,
   reserve = 0,
   reserveEnforced = true,
+  reserveUnconfirmed = false,
 }: {
   window?: QuotaWindow;
   kind: QuotaWindow['kind'];
@@ -291,6 +292,8 @@ export function QuotaMeter({
   scheduleOnly?: boolean;
   reserve?: number;
   reserveEnforced?: boolean;
+  /** The helper could not tell which plugin runs, so enforcement is unknown rather than off. */
+  reserveUnconfirmed?: boolean;
 }) {
   const value = blocked || scheduleOnly ? null : remaining(window);
   const state = quotaState(window, now);
@@ -344,11 +347,13 @@ export function QuotaMeter({
           title={
             reserveEnforced
               ? `New requests skip this account once ${reserve}% of its five-hour window is left, until the window resets.`
-              : 'The running scheduler plugin does not enforce this reserve.'
+              : reserveUnconfirmed
+                ? 'The server could not confirm which scheduler plugin is running.'
+                : 'The running scheduler plugin does not enforce this reserve.'
           }
         >
           {!reserveEnforced
-            ? `${reserve}% reserve not enforced`
+            ? `${reserve}% reserve ${reserveUnconfirmed ? 'unconfirmed' : 'not enforced'}`
             : reserveReached
               ? 'Reserve reached · paused until reset'
               : `Keeps ${reserve}% in reserve`}
@@ -1042,6 +1047,7 @@ export function TailnetApp() {
     );
   const proxyActive = status?.proxy === 'active';
   const reserveEnforced = !!status?.schedulerPlugin?.reserveEnforced;
+  const reserveUnconfirmed = !reserveEnforced && !status?.schedulerPlugin?.version;
   const unenforcedReserves = reserveEnforced
     ? []
     : accounts.filter((account) => reserveOf(account) > 0);
@@ -1166,6 +1172,7 @@ export function TailnetApp() {
                       }
                       reserve={reserveOf(account)}
                       reserveEnforced={reserveEnforced}
+                      reserveUnconfirmed={reserveUnconfirmed}
                     />
                     <div className={styles.priorityCell}>
                       <span>Priority</span>
@@ -1407,15 +1414,19 @@ export function TailnetApp() {
                     <div className={styles.attentionNotice}>
                       <Icon name="alert" />
                       <div>
-                        <strong>Five-hour reserves are not enforced</strong>
+                        <strong>
+                          {reserveUnconfirmed
+                            ? 'Five-hour reserve enforcement is unconfirmed'
+                            : 'Five-hour reserves are not enforced'}
+                        </strong>
                         <p>
                           {unenforcedReserves.length}{' '}
                           {unenforcedReserves.length === 1 ? 'account has' : 'accounts have'} a
-                          reserve, but the running scheduler plugin
-                          {status.schedulerPlugin?.version
-                            ? ` (${status.schedulerPlugin.version})`
-                            : ''}{' '}
-                          does not enforce it. These accounts can be used to their limit.
+                          reserve, but{' '}
+                          {reserveUnconfirmed
+                            ? 'the server could not confirm which scheduler plugin is running.'
+                            : `the running scheduler plugin (${status.schedulerPlugin!.version}) does not enforce it.`}{' '}
+                          These accounts may be used to their limit.
                         </p>
                       </div>
                       <button
@@ -1679,7 +1690,9 @@ export function TailnetApp() {
                           {reserveEnforced ? (
                             <span className={styles.healthyBadge}>Enforced</span>
                           ) : (
-                            <span className={styles.blockedBadge}>Not enforced</span>
+                            <span className={styles.blockedBadge}>
+                              {reserveUnconfirmed ? 'Unconfirmed' : 'Not enforced'}
+                            </span>
                           )}
                           <span className={styles.settingDetail}>
                             {status.schedulerPlugin?.version

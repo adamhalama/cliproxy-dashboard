@@ -47,6 +47,12 @@ describe('five-hour reserve meter', () => {
     expect(html).not.toContain('Reserve reached');
   });
 
+  test('says unconfirmed, not off, when the plugin version is unknown', () => {
+    const html = meter({ reserve: 10, reserveEnforced: false, reserveUnconfirmed: true });
+    expect(html).toContain('10% reserve unconfirmed');
+    expect(html).not.toContain('not enforced');
+  });
+
   test('shows the setting without a zone when usage is unavailable, and nothing without a reserve', () => {
     const scheduled = meter({ reserve: 10, scheduleOnly: true });
     expect(scheduled).toContain('Keeps 10% in reserve');
