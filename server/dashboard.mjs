@@ -12,6 +12,7 @@ const port = Number(process.env.DASHBOARD_PORT || 8318);
 const tailnetIp = process.env.DASHBOARD_TAILNET_IP || '100.89.229.100';
 const tailnetHost = process.env.DASHBOARD_TAILNET_HOST || 't450-server.tail8f1c78.ts.net';
 const ownerLogin = process.env.DASHBOARD_OWNER || 'adamhalama@github';
+const helperPath = process.env.DASHBOARD_HELPER || '/usr/local/sbin/cliproxy-quota';
 // A preview instance reads live status but must never change accounts or the proxy.
 const readOnly = process.env.DASHBOARD_READ_ONLY === '1';
 const token = randomBytes(32).toString('hex');
@@ -31,15 +32,13 @@ let nextMutationAt = 0;
 
 async function helper(...args) {
   try {
-    const { stdout } = await execute(
-      '/usr/bin/sudo',
-      ['-n', '/usr/local/sbin/cliproxy-quota', ...args],
-      {
-        timeout: 65000,
-        maxBuffer: 512 * 1024,
-        env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
-      }
-    );
+    const command = helperPath === '/usr/local/sbin/cliproxy-quota' ? '/usr/bin/sudo' : helperPath;
+    const commandArgs = command === '/usr/bin/sudo' ? ['-n', helperPath, ...args] : args;
+    const { stdout } = await execute(command, commandArgs, {
+      timeout: 65000,
+      maxBuffer: 512 * 1024,
+      env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
+    });
     return stdout;
   } catch {
     throw new Error(
