@@ -892,8 +892,7 @@ export function TailnetApp() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshingCodex, setRefreshingCodex] = useState(false);
-  const [refreshingClaude, setRefreshingClaude] = useState(false);
+  const [refreshingUsage, setRefreshingUsage] = useState(false);
   const [usageError, setUsageError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [provider, setProvider] = useState<Provider>('all');
@@ -928,67 +927,32 @@ export function TailnetApp() {
       }
     }
   }, []);
-  async function refreshCodexUsage() {
+  async function refreshUsage() {
     if (inFlight.current) return;
     inFlight.current = true;
     setRefreshing(true);
-    setRefreshingCodex(true);
+    setRefreshingUsage(true);
     setUsageError('');
     setNotice('');
     try {
-      const result = await dashboardApi.refreshCodexUsage();
+      const result = await dashboardApi.refreshUsage(provider);
       if (alive.current) {
         setStatus(result);
         setError('');
-        const codex = result.accounts.filter((account) => account.provider === 'codex');
-        const failed = codex.filter((account) => account.codexUsage?.status === 'error');
-        if (failed.length) {
-          setUsageError(
-            `Could not update usage for ${failed.length} Codex ${failed.length === 1 ? 'account' : 'accounts'}. Available saved observations are shown below.`
-          );
+        if (result.refreshErrors.length) {
+          setUsageError(result.refreshErrors.join(' '));
         } else {
-          setNotice('Codex usage check completed. Reported provider limits are shown below.');
+          setNotice('Usage refreshed. Reported provider limits are shown below.');
         }
       }
     } catch (error) {
       if (alive.current)
-        setUsageError(error instanceof Error ? error.message : 'Could not refresh Codex usage.');
+        setUsageError(error instanceof Error ? error.message : 'Could not refresh usage.');
     } finally {
       inFlight.current = false;
       if (alive.current) {
         setRefreshing(false);
-        setRefreshingCodex(false);
-        setNow(Date.now());
-      }
-    }
-  }
-  async function refreshClaudeUsage() {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setRefreshing(true);
-    setRefreshingClaude(true);
-    setUsageError('');
-    setNotice('');
-    try {
-      const result = await dashboardApi.refreshClaudeUsage();
-      if (alive.current) {
-        setStatus(result);
-        setError('');
-        const claude = result.accounts.find((account) => account.provider === 'claude');
-        setNotice(
-          claude?.claudeUsage?.checkedAt
-            ? 'Claude usage check completed. Reported provider limits are shown below.'
-            : 'Claude usage check completed, but the provider did not return usage data.'
-        );
-      }
-    } catch (error) {
-      if (alive.current)
-        setUsageError(error instanceof Error ? error.message : 'Could not refresh Claude usage.');
-    } finally {
-      inFlight.current = false;
-      if (alive.current) {
-        setRefreshing(false);
-        setRefreshingClaude(false);
+        setRefreshingUsage(false);
         setNow(Date.now());
       }
     }
@@ -1359,7 +1323,7 @@ export function TailnetApp() {
               onClick={() => void refresh()}
             >
               <Icon name="refresh" className={refreshing ? styles.refreshing : undefined} />
-              {refreshing && !refreshingCodex ? 'Reading snapshot…' : 'Refresh snapshot'}
+              {refreshing && !refreshingUsage ? 'Reading snapshot…' : 'Refresh snapshot'}
             </button>
           </div>
           <div className={styles.snapshotLine}>
@@ -1483,44 +1447,33 @@ export function TailnetApp() {
                           Previous percentages were window activation baselines. Only reset
                           schedules are available for accounts without provider observations.{' '}
                           {status.codexUsageRefreshAvailable
-                            ? 'Refresh Codex usage to check provider limits.'
+                            ? 'Refresh usage to check provider limits.'
                             : 'The server collector needs an upgrade to report actual usage.'}
                         </p>
                       </div>
                     </div>
                   )}
-                  {codexVisible && status.codexUsageRefreshAvailable && (
+                  {((codexVisible && status.codexUsageRefreshAvailable) ||
+                    (claudeVisible && status.claudeUsageRefreshAvailable)) && (
                     <div className={styles.usageToolbar}>
                       <button
                         type="button"
                         className={styles.button}
                         disabled={refreshing}
-                        onClick={() => void refreshCodexUsage()}
+                        aria-busy={refreshingUsage}
+                        onClick={() => void refreshUsage()}
                       >
                         <Icon
                           name="refresh"
-                          className={refreshingCodex ? styles.refreshing : undefined}
+                          className={refreshingUsage ? styles.refreshing : undefined}
                         />
-                        {refreshingCodex ? 'Checking Codex usage…' : 'Refresh Codex usage'}
+                        {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
                       </button>
-                      <span>Checks current provider limits</span>
-                    </div>
-                  )}
-                  {claudeVisible && status.claudeUsageRefreshAvailable && (
-                    <div className={styles.usageToolbar}>
-                      <button
-                        type="button"
-                        className={styles.button}
-                        disabled={refreshing}
-                        onClick={() => void refreshClaudeUsage()}
-                      >
-                        <Icon
-                          name="refresh"
-                          className={refreshingClaude ? styles.refreshing : undefined}
-                        />
-                        {refreshingClaude ? 'Checking Claude usage…' : 'Refresh Claude usage'}
-                      </button>
-                      <span>Checks current provider limits</span>
+                      <span>
+                        {provider === 'all'
+                          ? 'Checks Codex and Claude provider limits'
+                          : `Checks ${providerNames[provider]} provider limits`}
+                      </span>
                     </div>
                   )}
                   {(codexVisible || claudeVisible) && usageError && (
@@ -1615,7 +1568,7 @@ export function TailnetApp() {
                     establish remaining usage. Claude usage is checked every five minutes, and
                     either provider can be checked on demand. Refresh snapshot reads saved state.
                     {status.codexUsageRefreshAvailable &&
-                      ' Refresh Codex usage checks the provider.'}
+                      ' Refresh usage checks the selected providers.'}
                   </p>
                 </>
               )}

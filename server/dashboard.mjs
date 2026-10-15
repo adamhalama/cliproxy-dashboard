@@ -202,6 +202,41 @@ export async function handler(req, res) {
   mutationActive = true;
   nextMutationAt = Date.now() + 3000;
   try {
+    if (url.pathname === '/api/quota/refresh') {
+      if (!['all', 'codex', 'claude'].includes(body.provider))
+        return respond(res, 400, { error: 'Choose all, Codex, or Claude usage.' });
+      const { data } = await getStatus();
+      const providers = ['codex', 'claude'].filter(
+        (provider) =>
+          (body.provider === 'all' || body.provider === provider) &&
+          data.accounts.some((account) => account.provider === provider)
+      );
+      const refreshErrors = [];
+      for (const provider of providers) {
+        const name = provider === 'codex' ? 'Codex' : 'Claude';
+        if (!data[`${provider}UsageRefreshAvailable`]) {
+          refreshErrors.push(`${name} usage collector is unavailable.`);
+          continue;
+        }
+        try {
+          await helper(`${provider}-usage-refresh`);
+        } catch {
+          refreshErrors.push(`${name} usage could not be refreshed. Saved observations are shown.`);
+        }
+      }
+      const updated = (await getStatus(true)).data;
+      if (
+        providers.includes('codex') &&
+        updated.accounts.some(
+          (account) => account.provider === 'codex' && account.codexUsage?.status === 'error'
+        ) &&
+        !refreshErrors.some((error) => error.startsWith('Codex'))
+      )
+        refreshErrors.push(
+          'Some Codex accounts could not be refreshed. Saved observations are shown.'
+        );
+      return respond(res, 200, { ...dashboardStatus(updated), refreshErrors });
+    }
     if (url.pathname === '/api/quota/codex/refresh') {
       if (!(await getStatus()).data.codexUsageRefreshAvailable)
         return respond(res, 409, {
