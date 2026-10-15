@@ -71,6 +71,7 @@ export type DashboardStatus = {
   dashboardUrl: string;
   source: string;
   codexUsageRefreshAvailable?: boolean;
+  claudeUsageRefreshAvailable?: boolean;
   schedulerPlugin?: SchedulerPlugin | null;
   readOnly?: boolean;
   policy: {

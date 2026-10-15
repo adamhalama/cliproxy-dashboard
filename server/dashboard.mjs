@@ -12,6 +12,7 @@ const port = Number(process.env.DASHBOARD_PORT || 8318);
 const tailnetIp = process.env.DASHBOARD_TAILNET_IP || '100.89.229.100';
 const tailnetHost = process.env.DASHBOARD_TAILNET_HOST || 't450-server.tail8f1c78.ts.net';
 const ownerLogin = process.env.DASHBOARD_OWNER || 'adamhalama@github';
+const helperPath = process.env.DASHBOARD_HELPER || '/usr/local/sbin/cliproxy-quota';
 // A preview instance reads live status but must never change accounts or the proxy.
 const readOnly = process.env.DASHBOARD_READ_ONLY === '1';
 const token = randomBytes(32).toString('hex');
@@ -31,15 +32,13 @@ let nextMutationAt = 0;
 
 async function helper(...args) {
   try {
-    const { stdout } = await execute(
-      '/usr/bin/sudo',
-      ['-n', '/usr/local/sbin/cliproxy-quota', ...args],
-      {
-        timeout: 65000,
-        maxBuffer: 512 * 1024,
-        env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
-      }
-    );
+    const command = helperPath === '/usr/local/sbin/cliproxy-quota' ? '/usr/bin/sudo' : helperPath;
+    const commandArgs = command === '/usr/bin/sudo' ? ['-n', helperPath, ...args] : args;
+    const { stdout } = await execute(command, commandArgs, {
+      timeout: 65000,
+      maxBuffer: 512 * 1024,
+      env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
+    });
     return stdout;
   } catch {
     throw new Error(
@@ -74,7 +73,7 @@ function dashboardStatus(data) {
     gatewayUrl: `http://${tailnetHost}:${port}`,
     dashboardUrl: `http://${tailnetHost}:${port}`,
     source:
-      'Codex usage comes from provider quota checks when available; scheduler activation baselines are not usage readings. Claude usage is checked every five minutes. Refresh snapshot reads saved observations, not provider APIs.',
+      'Codex and Claude usage come from provider quota checks when available; scheduler activation baselines are not usage readings. Claude is also checked every five minutes. Refresh snapshot reads saved observations, not provider APIs.',
     policy: {
       mode: 'Fill first',
       description:
@@ -203,12 +202,55 @@ export async function handler(req, res) {
   mutationActive = true;
   nextMutationAt = Date.now() + 3000;
   try {
+    if (url.pathname === '/api/quota/refresh') {
+      if (!['all', 'codex', 'claude'].includes(body.provider))
+        return respond(res, 400, { error: 'Choose all, Codex, or Claude usage.' });
+      const { data } = await getStatus();
+      const providers = ['codex', 'claude'].filter(
+        (provider) =>
+          (body.provider === 'all' || body.provider === provider) &&
+          data.accounts.some((account) => account.provider === provider)
+      );
+      const refreshErrors = [];
+      for (const provider of providers) {
+        const name = provider === 'codex' ? 'Codex' : 'Claude';
+        if (!data[`${provider}UsageRefreshAvailable`]) {
+          refreshErrors.push(`${name} usage collector is unavailable.`);
+          continue;
+        }
+        try {
+          await helper(`${provider}-usage-refresh`);
+        } catch {
+          refreshErrors.push(`${name} usage could not be refreshed. Saved observations are shown.`);
+        }
+      }
+      const updated = (await getStatus(true)).data;
+      if (
+        providers.includes('codex') &&
+        updated.accounts.some(
+          (account) => account.provider === 'codex' && account.codexUsage?.status === 'error'
+        ) &&
+        !refreshErrors.some((error) => error.startsWith('Codex'))
+      )
+        refreshErrors.push(
+          'Some Codex accounts could not be refreshed. Saved observations are shown.'
+        );
+      return respond(res, 200, { ...dashboardStatus(updated), refreshErrors });
+    }
     if (url.pathname === '/api/quota/codex/refresh') {
       if (!(await getStatus()).data.codexUsageRefreshAvailable)
         return respond(res, 409, {
           error: 'Install the Codex usage collector before refreshing provider quota.',
         });
       await helper('codex-usage-refresh');
+      return respond(res, 200, dashboardStatus((await getStatus(true)).data));
+    }
+    if (url.pathname === '/api/quota/claude/refresh') {
+      if (!(await getStatus()).data.claudeUsageRefreshAvailable)
+        return respond(res, 409, {
+          error: 'Install the Claude usage collector before refreshing provider quota.',
+        });
+      await helper('claude-usage-refresh');
       return respond(res, 200, dashboardStatus((await getStatus(true)).data));
     }
     if (url.pathname === '/api/accounts/priority') {

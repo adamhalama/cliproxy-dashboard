@@ -30,7 +30,8 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 
 export const dashboardApi = {
   status: () => request<DashboardStatus>('/api/status'),
-  refreshCodexUsage: () => request<DashboardStatus>('/api/quota/codex/refresh', {}),
+  refreshUsage: (provider: 'all' | 'codex' | 'claude') =>
+    request<DashboardStatus & { refreshErrors: string[] }>('/api/quota/refresh', { provider }),
   saveAccount: (
     id: string,
     settings: { priority: number; alias: string; reserveFiveHourPercent?: number }

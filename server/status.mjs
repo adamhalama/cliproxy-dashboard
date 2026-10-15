@@ -24,6 +24,7 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   let claudeUsage;
   let codexUsage = [];
   let codexUsageRefreshAvailable = false;
+  let claudeUsageRefreshAvailable = false;
   let schedulerPlugin = null;
   for (const line of output.split('\n')) {
     if (line.startsWith('cliproxy: ')) proxy = line.slice(10).trim();
@@ -38,6 +39,7 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
           .match(/^[0-9][A-Za-z0-9.+-]*$/)?.[0] ?? null;
       schedulerPlugin = { version, reserveEnforced: /-local-reserve\b/.test(version ?? '') };
     } else if (line === 'codex usage collector: available') codexUsageRefreshAvailable = true;
+    else if (line === 'claude usage collector: available') claudeUsageRefreshAvailable = true;
     else if (line.startsWith('codex usage: ')) codexUsage = parseCodexUsage(line.slice(13));
     else if (/^codex-[A-Za-z0-9._@+-]+\.json$/.test(line)) {
       const plan = line.includes('prolite')
@@ -172,7 +174,15 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   }
   if (proxy === 'unknown') throw new Error('Quota helper returned an unreadable status.');
   return {
-    data: { fetchedAt, proxy, claudeTimer, accounts, codexUsageRefreshAvailable, schedulerPlugin },
+    data: {
+      fetchedAt,
+      proxy,
+      claudeTimer,
+      accounts,
+      codexUsageRefreshAvailable,
+      claudeUsageRefreshAvailable,
+      schedulerPlugin,
+    },
     authFiles,
   };
 }
