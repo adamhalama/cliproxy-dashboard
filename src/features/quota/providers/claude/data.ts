@@ -173,6 +173,14 @@ export const resolveClaudePlanType = (profile: ClaudeProfileResponse | null): st
   return null;
 };
 
+/**
+ * Usage can change immediately after a reset grant is redeemed. Keep each
+ * provider read distinct so the management proxy cannot replay the previous
+ * response while the upstream settles the reset.
+ */
+export const buildClaudeUsageRequestUrl = (nonce = Date.now()): string =>
+  `${CLAUDE_USAGE_URL}?quota_refresh=${encodeURIComponent(String(nonce))}`;
+
 const fetchClaudeQuota = async (file: AuthFileItem, t: TFunction): Promise<ClaudeQuotaData> => {
   const rawAuthIndex = file['auth_index'] ?? file.authIndex;
   const authIndex = normalizeAuthIndex(rawAuthIndex);
@@ -184,7 +192,7 @@ const fetchClaudeQuota = async (file: AuthFileItem, t: TFunction): Promise<Claud
     apiCallApi.request({
       authIndex,
       method: 'GET',
-      url: CLAUDE_USAGE_URL,
+      url: buildClaudeUsageRequestUrl(),
       header: { ...CLAUDE_REQUEST_HEADERS },
     }),
     apiCallApi.request({
