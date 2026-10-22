@@ -39,6 +39,44 @@ Deployment leaves the established policy intact: Plus and Team priority 100, ear
 
 ## Build and deploy
 
+### Automatic production updates
+
+On the Lenovo, enable the unprivileged deployment timer once:
+
+```sh
+bash deploy/install-auto-deploy.sh
+```
+
+The timer checks this fork's `main` every minute. For each new commit it creates
+an isolated release, installs the locked dependencies, runs `bun run verify`,
+and builds `build:tailnet` last. Only a passing build replaces the dashboard
+service. It checks `/api/health` and compares the served HTML with that release;
+a failed activation restores the previous service. No GitHub runner, inbound
+webhook, or new deployment secret is required. GitHub access uses the server's
+existing Git configuration. A network or build failure leaves production as-is
+and retries on the next tick. Deployment takes the build time plus up to a minute.
+
+```sh
+systemctl --user list-timers cliproxy-dashboard-deploy.timer
+journalctl --user -u cliproxy-dashboard-deploy.service
+cat ~/.local/state/cliproxy-dashboard-deploy/deployed-revision
+systemctl --user start cliproxy-dashboard-deploy.service # check immediately
+systemctl --user disable --now cliproxy-dashboard-deploy.timer # pause updates
+```
+
+The automation script is installed in `~/.local/libexec/cliproxy-dashboard`;
+rerun its installer after changing the automation itself. Releases and the
+previous service unit are retained in `~/.local/state/cliproxy-dashboard-deploy`
+for rollback. Monitor this directory's disk usage and remove unused releases
+as needed, retaining the active and previous releases. Existing user lingering
+keeps the timer working after logout and reboot.
+
+This deploys the dashboard UI and Node adapter only. Root-owned quota helpers
+from the separate setup repository still require an administrator installation.
+Merging that repository does not install those privileged scripts.
+
+### Manual deployment
+
 Requires Node.js 24, Bun 1.3.14, systemd user services, Tailscale, and the root-owned `/usr/local/sbin/cliproxy-quota` helper with the existing narrow sudo rule. User lingering must already be enabled for boot persistence.
 
 ```sh
