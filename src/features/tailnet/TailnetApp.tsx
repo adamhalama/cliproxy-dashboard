@@ -59,6 +59,14 @@ const pages: Record<Page, { label: string; icon: IconName; description: string }
   },
 };
 const providerNames = { codex: 'Codex', claude: 'Claude' };
+const resetExpiryDate = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZoneName: 'short',
+});
 const resetCounts = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
@@ -246,7 +254,12 @@ function manualResetState(account: Account, now: number): 'fresh' | 'stale' | 'u
   if (account.codexUsage?.manualResets?.availableCount == null) return 'unknown';
   const checked = timestamp(account.codexUsage.checkedAt);
   if (!checked) return 'unknown';
-  return account.blocked || account.codexUsage.status === 'error' || now - checked > 10 * 60 * 1000
+  return account.blocked ||
+    account.codexUsage.status === 'error' ||
+    now - checked > 10 * 60 * 1000 ||
+    account.codexUsage.manualResets.credits?.some(
+      (credit) => timestamp(credit.expiresAt) > 0 && timestamp(credit.expiresAt) <= now
+    )
     ? 'stale'
     : 'fresh';
 }
@@ -254,6 +267,11 @@ function manualResetState(account: Account, now: number): 'fresh' | 'stale' | 'u
 export function ManualResets({ account, now }: { account: Account; now: number }) {
   const state = manualResetState(account, now);
   const credits = account.codexUsage?.manualResets;
+  const expirations = new Map<number, number>();
+  for (const credit of credits?.credits ?? []) {
+    const expires = timestamp(credit.expiresAt);
+    if (expires) expirations.set(expires, (expirations.get(expires) ?? 0) + 1);
+  }
   return (
     <div className={styles.manualResets}>
       <span>Manual resets</span>
@@ -267,6 +285,27 @@ export function ManualResets({ account, now }: { account: Account; now: number }
       ) : state === 'fresh' && credits?.applicableAvailableCount != null ? (
         <span>{resetCounts.format(credits.applicableAvailableCount)} applicable now</span>
       ) : null}
+      {credits?.availableCount != null && credits.availableCount > 0 && (
+        <div className={styles.resetExpirations}>
+          {expirations.size ? (
+            [...expirations]
+              .sort(([a], [b]) => a - b)
+              .map(([expires, count]) => (
+                <span key={expires}>
+                  {count} {expires <= now ? 'expired' : count === 1 ? 'expires' : 'expire'}{' '}
+                  <time dateTime={new Date(expires).toISOString()}>
+                    {resetExpiryDate.format(expires)}
+                  </time>
+                </span>
+              ))
+          ) : (
+            <span>Expiration not reported</span>
+          )}
+          {expirations.size > 0 && (credits.credits?.length ?? 0) < credits.availableCount && (
+            <span>Other expiration dates not reported</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

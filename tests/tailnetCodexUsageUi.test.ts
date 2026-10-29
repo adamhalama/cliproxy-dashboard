@@ -102,3 +102,44 @@ describe('manual reset balances', () => {
     expect(html).toContain('3 unavailable');
   });
 });
+
+describe('manual reset expiration dates', () => {
+  function dated(dates: string[]) {
+    return {
+      ...withResets,
+      codexUsage: {
+        ...withResets.codexUsage!,
+        manualResets: {
+          availableCount: 3,
+          applicableAvailableCount: 0,
+          credits: dates.map((expiresAt) => ({ expiresAt })),
+        },
+      },
+    };
+  }
+  test('groups matching dates and sorts all dates below the balance', () => {
+    const html = resets(
+      dated(['2026-11-02T12:00:00Z', '2026-11-01T12:00:00Z', '2026-11-01T12:00:00Z'])
+    );
+    expect(html).toContain('2 expire');
+    expect(html).toContain('1 expires');
+    expect(html.indexOf('3 available')).toBeLessThan(html.indexOf('<time'));
+    expect(html.indexOf('2026-11-01T12:00:00.000Z')).toBeLessThan(
+      html.indexOf('2026-11-02T12:00:00.000Z')
+    );
+    expect(html).not.toContain('not reported');
+  });
+  test('does not invent missing expiration dates', () => {
+    expect(resets(withResets)).toContain('Expiration not reported');
+    expect(resets(dated(['invalid']))).toContain('Expiration not reported');
+    expect(resets(dated(['2026-11-01T12:00:00Z']))).toContain(
+      'Other expiration dates not reported'
+    );
+  });
+  test('expired credits make counts stale and are excluded from totals', () => {
+    const expired = dated(['2026-10-09T12:00:00Z']);
+    expect(resets(expired)).toContain('1 expired');
+    expect(resets(expired)).toContain('Cached; needs update');
+    expect(summary([expired])).not.toContain('3 available');
+  });
+});

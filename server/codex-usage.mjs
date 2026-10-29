@@ -45,6 +45,9 @@ export function parseCodexUsage(output) {
             ? {
                 availableCount: count(entry.manualResets.availableCount),
                 applicableAvailableCount: count(entry.manualResets.applicableAvailableCount),
+                credits: (Array.isArray(entry.manualResets.credits) ? entry.manualResets.credits : [])
+                  .map((credit) => ({ expiresAt: timestamp(credit?.expiresAt) }))
+                  .filter((credit) => credit.expiresAt !== null),
               }
             : null,
         error:
