@@ -121,13 +121,20 @@ describe('manual reset expiration dates', () => {
     const html = resets(
       dated(['2026-11-02T12:00:00Z', '2026-11-01T12:00:00Z', '2026-11-01T12:00:00Z'])
     );
-    expect(html).toContain('2 expire');
-    expect(html).toContain('1 expires');
+    expect(html).toContain('2 x ');
+    expect(html).toContain('1 x ');
     expect(html.indexOf('3 available')).toBeLessThan(html.indexOf('<time'));
     expect(html.indexOf('2026-11-01T12:00:00.000Z')).toBeLessThan(
       html.indexOf('2026-11-02T12:00:00.000Z')
     );
     expect(html).not.toContain('not reported');
+  });
+  test('uses compact local dates and 24-hour time without a timezone label', () => {
+    const date = new Date(2026, 10, 1, 11, 20).toISOString();
+    const html = resets(dated([date, date]));
+    expect(html).toContain('2 x <time');
+    expect(html).toContain('>1.11. 2026 11:20</time>');
+    expect(html).not.toMatch(/GMT|CET|AM|PM/);
   });
   test('does not invent missing expiration dates', () => {
     expect(resets(withResets)).toContain('Expiration not reported');
@@ -138,7 +145,8 @@ describe('manual reset expiration dates', () => {
   });
   test('expired credits make counts stale and are excluded from totals', () => {
     const expired = dated(['2026-10-09T12:00:00Z']);
-    expect(resets(expired)).toContain('1 expired');
+    expect(resets(expired)).toContain('1 x ');
+    expect(resets(expired)).toContain('(expired)');
     expect(resets(expired)).toContain('Cached; needs update');
     expect(summary([expired])).not.toContain('3 available');
   });

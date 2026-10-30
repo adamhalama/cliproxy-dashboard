@@ -59,14 +59,12 @@ const pages: Record<Page, { label: string; icon: IconName; description: string }
   },
 };
 const providerNames = { codex: 'Codex', claude: 'Claude' };
-const resetExpiryDate = new Intl.DateTimeFormat(undefined, {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  timeZoneName: 'short',
-});
+function formatResetExpiry(expires: number): string {
+  const date = new Date(expires);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${date.getDate()}.${date.getMonth() + 1}. ${date.getFullYear()} ${hours}:${minutes}`;
+}
 const resetCounts = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
@@ -292,10 +290,11 @@ export function ManualResets({ account, now }: { account: Account; now: number }
               .sort(([a], [b]) => a - b)
               .map(([expires, count]) => (
                 <span key={expires}>
-                  {count} {expires <= now ? 'expired' : count === 1 ? 'expires' : 'expire'}{' '}
+                  {count} x{' '}
                   <time dateTime={new Date(expires).toISOString()}>
-                    {resetExpiryDate.format(expires)}
+                    {formatResetExpiry(expires)}
                   </time>
+                  {expires <= now ? ' (expired)' : null}
                 </span>
               ))
           ) : (
