@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
+import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ManualResets, Summary } from '../src/features/tailnet/TailnetApp';
+import { ManualResets, ManualResetExpirations, Summary } from '../src/features/tailnet/TailnetApp';
 import type { Account } from '../src/features/tailnet/types';
 
 const now = Date.parse('2026-10-10T16:05:00Z');
@@ -60,7 +60,14 @@ const withResets: Account = {
   },
 };
 function resets(account: Account, at = now) {
-  return renderToStaticMarkup(createElement(ManualResets, { account, now: at }));
+  return renderToStaticMarkup(
+    createElement(
+      Fragment,
+      null,
+      createElement(ManualResets, { account, now: at }),
+      createElement(ManualResetExpirations, { account, now: at })
+    )
+  );
 }
 describe('manual reset balances', () => {
   test('shows reported available and applicable counts independently of quota percentages', () => {
@@ -135,6 +142,14 @@ describe('manual reset expiration dates', () => {
     expect(html).toContain('2 x <time');
     expect(html).toContain('>1.11. 2026 11:20</time>');
     expect(html).not.toMatch(/GMT|CET|AM|PM/);
+  });
+  test('keeps more than three distinct expiration dates', () => {
+    const dates = Array.from({ length: 12 }, (_, index) =>
+      new Date(2026, 10, index + 1, 11, 20).toISOString()
+    );
+    const html = resets(dated(dates));
+    expect(html.match(/<time /g)).toHaveLength(12);
+    expect(html).toContain('>12.11. 2026 11:20</time>');
   });
   test('does not invent missing expiration dates', () => {
     expect(resets(withResets)).toContain('Expiration not reported');

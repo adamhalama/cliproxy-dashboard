@@ -752,12 +752,17 @@
   margin-top: 7px;
 }
 .resetExpirations {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin-top: 7px;
+  line-height: 1.6;
   color: var(--console-dim);
   font-size: 10px;
-  overflow-wrap: anywhere;
+  > span {
+    white-space: nowrap;
+  }
 }
 .summaryResets {
   border-top: 1px solid var(--console-border);

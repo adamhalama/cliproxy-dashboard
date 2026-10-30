@@ -265,11 +265,6 @@ function manualResetState(account: Account, now: number): 'fresh' | 'stale' | 'u
 export function ManualResets({ account, now }: { account: Account; now: number }) {
   const state = manualResetState(account, now);
   const credits = account.codexUsage?.manualResets;
-  const expirations = new Map<number, number>();
-  for (const credit of credits?.credits ?? []) {
-    const expires = timestamp(credit.expiresAt);
-    if (expires) expirations.set(expires, (expirations.get(expires) ?? 0) + 1);
-  }
   return (
     <div className={styles.manualResets}>
       <span>Manual resets</span>
@@ -283,27 +278,35 @@ export function ManualResets({ account, now }: { account: Account; now: number }
       ) : state === 'fresh' && credits?.applicableAvailableCount != null ? (
         <span>{resetCounts.format(credits.applicableAvailableCount)} applicable now</span>
       ) : null}
-      {credits?.availableCount != null && credits.availableCount > 0 && (
-        <div className={styles.resetExpirations}>
-          {expirations.size ? (
-            [...expirations]
-              .sort(([a], [b]) => a - b)
-              .map(([expires, count]) => (
-                <span key={expires}>
-                  {count} x{' '}
-                  <time dateTime={new Date(expires).toISOString()}>
-                    {formatResetExpiry(expires)}
-                  </time>
-                  {expires <= now ? ' (expired)' : null}
-                </span>
-              ))
-          ) : (
-            <span>Expiration not reported</span>
-          )}
-          {expirations.size > 0 && (credits.credits?.length ?? 0) < credits.availableCount && (
-            <span>Other expiration dates not reported</span>
-          )}
-        </div>
+    </div>
+  );
+}
+
+export function ManualResetExpirations({ account, now }: { account: Account; now: number }) {
+  const credits = account.codexUsage?.manualResets;
+  const expirations = new Map<number, number>();
+  for (const credit of credits?.credits ?? []) {
+    const expires = timestamp(credit.expiresAt);
+    if (expires) expirations.set(expires, (expirations.get(expires) ?? 0) + 1);
+  }
+  if (credits?.availableCount == null || credits.availableCount <= 0) return null;
+  return (
+    <div className={styles.resetExpirations}>
+      {expirations.size ? (
+        [...expirations]
+          .sort(([a], [b]) => a - b)
+          .map(([expires, count]) => (
+            <span key={expires}>
+              {count} x{' '}
+              <time dateTime={new Date(expires).toISOString()}>{formatResetExpiry(expires)}</time>
+              {expires <= now ? ' (expired)' : null}
+            </span>
+          ))
+      ) : (
+        <span>Expiration not reported</span>
+      )}
+      {expirations.size > 0 && (credits.credits?.length ?? 0) < credits.availableCount && (
+        <span>Other expiration dates not reported</span>
       )}
     </div>
   );
@@ -1234,6 +1237,9 @@ export function TailnetApp() {
                       {account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'}
                       <Icon name="chevron" />
                     </button>
+                    {account.provider === 'codex' && (
+                      <ManualResetExpirations account={account} now={now} />
+                    )}
                   </article>
                   {account.provider === 'claude' && <ClaudeUsage account={account} now={now} />}
                 </Fragment>
