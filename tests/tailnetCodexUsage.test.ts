@@ -104,13 +104,22 @@ describe('current Codex usage', () => {
     const account = parseStatus(
       output({
         ...entry,
-        manualResets: { availableCount: 3, applicableAvailableCount: 0, secret: 'private' },
+        manualResets: {
+          availableCount: 3,
+          applicableAvailableCount: 0,
+          credits: [
+            { expiresAt: '2026-11-01T12:00:00Z', secret: 'private' },
+            { expiresAt: 'invalid' },
+          ],
+          secret: 'private',
+        },
       } as typeof entry),
       checkedAt
     ).data.accounts[0];
     expect(account.codexUsage.manualResets).toEqual({
       availableCount: 3,
       applicableAvailableCount: 0,
+      credits: [{ expiresAt: '2026-11-01T12:00:00Z' }],
     });
     expect(JSON.stringify(account)).not.toContain('private');
     for (const invalid of [null, '', false, [], {}, -1, 1.5, 'NaN', Number.MAX_SAFE_INTEGER + 1]) {

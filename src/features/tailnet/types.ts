@@ -52,6 +52,7 @@ export type Account = {
     manualResets?: {
       availableCount: number | null;
       applicableAvailableCount: number | null;
+      credits?: { expiresAt: string }[];
     } | null;
   };
 };

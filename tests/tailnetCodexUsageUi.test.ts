@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { createElement } from 'react';
+import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ManualResets, Summary } from '../src/features/tailnet/TailnetApp';
+import { ManualResets, ManualResetExpirations, Summary } from '../src/features/tailnet/TailnetApp';
 import type { Account } from '../src/features/tailnet/types';
 
 const now = Date.parse('2026-10-10T16:05:00Z');
@@ -60,7 +60,14 @@ const withResets: Account = {
   },
 };
 function resets(account: Account, at = now) {
-  return renderToStaticMarkup(createElement(ManualResets, { account, now: at }));
+  return renderToStaticMarkup(
+    createElement(
+      Fragment,
+      null,
+      createElement(ManualResets, { account, now: at }),
+      createElement(ManualResetExpirations, { account, now: at })
+    )
+  );
 }
 describe('manual reset balances', () => {
   test('shows reported available and applicable counts independently of quota percentages', () => {
@@ -100,5 +107,62 @@ describe('manual reset balances', () => {
     expect(html).toContain('3 available');
     expect(html).not.toContain('9 available');
     expect(html).toContain('3 unavailable');
+  });
+});
+
+describe('manual reset expiration dates', () => {
+  function dated(dates: string[]) {
+    return {
+      ...withResets,
+      codexUsage: {
+        ...withResets.codexUsage!,
+        manualResets: {
+          availableCount: 3,
+          applicableAvailableCount: 0,
+          credits: dates.map((expiresAt) => ({ expiresAt })),
+        },
+      },
+    };
+  }
+  test('groups matching dates and sorts all dates below the balance', () => {
+    const html = resets(
+      dated(['2026-11-02T12:00:00Z', '2026-11-01T12:00:00Z', '2026-11-01T12:00:00Z'])
+    );
+    expect(html).toContain('2 x ');
+    expect(html).toContain('1 x ');
+    expect(html.indexOf('3 available')).toBeLessThan(html.indexOf('<time'));
+    expect(html.indexOf('2026-11-01T12:00:00.000Z')).toBeLessThan(
+      html.indexOf('2026-11-02T12:00:00.000Z')
+    );
+    expect(html).not.toContain('not reported');
+  });
+  test('uses compact local dates and 24-hour time without a timezone label', () => {
+    const date = new Date(2026, 10, 1, 11, 20).toISOString();
+    const html = resets(dated([date, date]));
+    expect(html).toContain('2 x <time');
+    expect(html).toContain('>1.11. 2026 11:20</time>');
+    expect(html).not.toMatch(/GMT|CET|AM|PM/);
+  });
+  test('keeps more than three distinct expiration dates', () => {
+    const dates = Array.from({ length: 12 }, (_, index) =>
+      new Date(2026, 10, index + 1, 11, 20).toISOString()
+    );
+    const html = resets(dated(dates));
+    expect(html.match(/<time /g)).toHaveLength(12);
+    expect(html).toContain('>12.11. 2026 11:20</time>');
+  });
+  test('does not invent missing expiration dates', () => {
+    expect(resets(withResets)).toContain('Expiration not reported');
+    expect(resets(dated(['invalid']))).toContain('Expiration not reported');
+    expect(resets(dated(['2026-11-01T12:00:00Z']))).toContain(
+      'Other expiration dates not reported'
+    );
+  });
+  test('expired credits make counts stale and are excluded from totals', () => {
+    const expired = dated(['2026-10-09T12:00:00Z']);
+    expect(resets(expired)).toContain('1 x ');
+    expect(resets(expired)).toContain('(expired)');
+    expect(resets(expired)).toContain('Cached; needs update');
+    expect(summary([expired])).not.toContain('3 available');
   });
 });
