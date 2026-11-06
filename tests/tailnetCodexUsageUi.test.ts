@@ -3,6 +3,7 @@ import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ManualResets, ManualResetExpirations, Summary } from '../src/features/tailnet/TailnetApp';
 import type { Account } from '../src/features/tailnet/types';
+import { resetExpiryCountdown } from '../src/features/tailnet/resetExpiry';
 
 const now = Date.parse('2026-10-10T16:05:00Z');
 const account: Account = {
@@ -59,13 +60,13 @@ const withResets: Account = {
     manualResets: { availableCount: 3, applicableAvailableCount: 0 },
   },
 };
-function resets(account: Account, at = now) {
+function resets(account: Account, at = now, countdown = false) {
   return renderToStaticMarkup(
     createElement(
       Fragment,
       null,
       createElement(ManualResets, { account, now: at }),
-      createElement(ManualResetExpirations, { account, now: at })
+      createElement(ManualResetExpirations, { account, now: at, countdown, onToggle: () => {} })
     )
   );
 }
@@ -164,5 +165,40 @@ describe('manual reset expiration dates', () => {
     expect(resets(expired)).toContain('(expired)');
     expect(resets(expired)).toContain('Cached; needs update');
     expect(summary([expired])).not.toContain('3 available');
+  });
+  test('offers a keyboard-accessible toggle and preserves exact instants in countdown mode', () => {
+    const date = new Date(now + 4 * 86400000 + 17 * 3600000).toISOString();
+    const credits = dated([date, date]);
+    const absolute = resets(credits);
+    expect(absolute).toContain('type="button"');
+    expect(absolute).toContain('aria-pressed="false"');
+    expect(absolute).toContain('Show all reset expirations as time remaining');
+    const relative = resets(credits, now, true);
+    expect(relative).toContain('aria-pressed="true"');
+    expect(relative).toContain('Show all reset expirations as dates');
+    expect(relative).toContain(`dateTime="${date}"`);
+    expect(relative).toContain('2 x <time');
+    expect(relative).toContain('>Expires in 4d 17h</time>');
+    expect(resets(credits, now + 3600000, true)).toContain('>Expires in 4d 16h</time>');
+    expect(resets(dated(['2026-10-09T12:00:00Z']), now, true)).toContain('>Expired</time>');
+  });
+});
+
+describe('reset expiration countdown', () => {
+  test('uses days, hours and minutes without rounding up at a boundary', () => {
+    for (const [remaining, label] of [
+      [-1, 'Expired'],
+      [0, 'Expired'],
+      [1, 'Expires in <1m'],
+      [59999, 'Expires in <1m'],
+      [60000, 'Expires in 1m'],
+      [3599999, 'Expires in 59m'],
+      [3600000, 'Expires in 1h 0m'],
+      [86399999, 'Expires in 23h 59m'],
+      [86400000, 'Expires in 1d 0h'],
+      [31 * 86400000, 'Expires in 31d 0h'],
+    ] as const) {
+      expect(resetExpiryCountdown(now + remaining, now)).toBe(label);
+    }
   });
 });

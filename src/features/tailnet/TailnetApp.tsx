@@ -6,6 +6,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { dashboardApi } from './api';
 import { checkLoginTarget } from './login';
 import { ClaudeUsage } from './ClaudeUsage';
+import { resetExpiryCountdown } from './resetExpiry';
 import type { Account, DashboardStatus, LoginResult, QuotaWindow, SchedulerPlugin } from './types';
 import styles from './TailnetApp.module.scss';
 
@@ -282,7 +283,17 @@ export function ManualResets({ account, now }: { account: Account; now: number }
   );
 }
 
-export function ManualResetExpirations({ account, now }: { account: Account; now: number }) {
+export function ManualResetExpirations({
+  account,
+  now,
+  countdown,
+  onToggle,
+}: {
+  account: Account;
+  now: number;
+  countdown: boolean;
+  onToggle: () => void;
+}) {
   const credits = account.codexUsage?.manualResets;
   const expirations = new Map<number, number>();
   for (const credit of credits?.credits ?? []) {
@@ -296,11 +307,21 @@ export function ManualResetExpirations({ account, now }: { account: Account; now
         [...expirations]
           .sort(([a], [b]) => a - b)
           .map(([expires, count]) => (
-            <span key={expires}>
+            <button
+              key={expires}
+              type="button"
+              className={styles.resetExpiryToggle}
+              onClick={onToggle}
+              aria-pressed={countdown}
+              aria-label={`Show all reset expirations as ${countdown ? 'dates' : 'time remaining'}`}
+              title={`${formatResetExpiry(expires)} · Click to show all ${countdown ? 'dates' : 'countdowns'}`}
+            >
               {count} x{' '}
-              <time dateTime={new Date(expires).toISOString()}>{formatResetExpiry(expires)}</time>
-              {expires <= now ? ' (expired)' : null}
-            </span>
+              <time dateTime={new Date(expires).toISOString()}>
+                {countdown ? resetExpiryCountdown(expires, now) : formatResetExpiry(expires)}
+              </time>
+              {!countdown && expires <= now ? ' (expired)' : null}
+            </button>
           ))
       ) : (
         <span>Expiration not reported</span>
@@ -936,6 +957,7 @@ export function TailnetApp() {
   const [refreshingUsage, setRefreshingUsage] = useState(false);
   const [usageError, setUsageError] = useState('');
   const [now, setNow] = useState(() => Date.now());
+  const [resetExpiryCountdownShown, setResetExpiryCountdownShown] = useState(false);
   const [provider, setProvider] = useState<Provider>('all');
   const [sort, setSort] = useState<Sort>('reset');
   const [search, setSearch] = useState('');
@@ -1238,7 +1260,15 @@ export function TailnetApp() {
                       <Icon name="chevron" />
                     </button>
                     {account.provider === 'codex' && (
-                      <ManualResetExpirations account={account} now={now} />
+                      <ManualResetExpirations
+                        account={account}
+                        now={now}
+                        countdown={resetExpiryCountdownShown}
+                        onToggle={() => {
+                          setNow(Date.now());
+                          setResetExpiryCountdownShown((shown) => !shown);
+                        }}
+                      />
                     )}
                   </article>
                   {account.provider === 'claude' && <ClaudeUsage account={account} now={now} />}
