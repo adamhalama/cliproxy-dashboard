@@ -6,7 +6,8 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { dashboardApi } from './api';
 import { checkLoginTarget } from './login';
 import { ClaudeUsage } from './ClaudeUsage';
-import { resetExpiryCountdown, resetWeekday } from './resetExpiry';
+import { claudeResetFreshness, claudeResetGrantStatus, claudeResetsLeft } from './claudeResets';
+import { formatResetExpiry, resetExpiryCountdown, resetWeekday } from './resetExpiry';
 import {
   defaultSummaryKinds,
   moveProvider,
@@ -65,12 +66,6 @@ const pages: Record<Page, { label: string; icon: IconName }> = {
   },
 };
 const providerNames = { codex: 'Codex', claude: 'Claude' };
-function formatResetExpiry(expires: number): string {
-  const date = new Date(expires);
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${date.getDate()}.${date.getMonth() + 1}. ${date.getFullYear()} ${hours}:${minutes}`;
-}
 const resetCounts = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 
 function Icon({ name, className }: { name: IconName; className?: string }) {
@@ -284,6 +279,37 @@ export function ManualResets({ account, now }: { account: Account; now: number }
         <span className={styles.amberText}>Cached; needs update</span>
       ) : state === 'fresh' && credits?.applicableAvailableCount != null ? (
         <span>{resetCounts.format(credits.applicableAvailableCount)} applicable now</span>
+      ) : null}
+    </div>
+  );
+}
+
+/** Compact row balance; per-grant details live in the Claude usage expansion. */
+export function ClaudeLimitResets({ account, now }: { account: Account; now: number }) {
+  const resets = account.claudeUsage?.manualResets;
+  const freshness = claudeResetFreshness(account, now);
+  const usable =
+    resets?.grants.filter(
+      (grant) => claudeResetGrantStatus(grant, resets.eligible, freshness, now).tone === 'ready'
+    ).length ?? 0;
+  return (
+    <div className={styles.manualResets}>
+      <span>Limit resets</span>
+      <strong>
+        {resets
+          ? `${resetCounts.format(claudeResetsLeft(resets.grants, now))} left`
+          : 'Not reported'}
+      </strong>
+      {!resets ? null : freshness === 'paused' ? (
+        <span className={styles.amberText}>Paused; cached</span>
+      ) : freshness !== 'fresh' ? (
+        <span className={styles.amberText}>Cached; needs update</span>
+      ) : !resets.eligible ? (
+        <span>Not eligible</span>
+      ) : usable > 0 ? (
+        <span>
+          {resetCounts.format(usable)} {usable === 1 ? 'grant' : 'grants'} usable now
+        </span>
       ) : null}
     </div>
   );
@@ -1544,6 +1570,9 @@ export function TailnetApp() {
                         </div>
                       )}
                       {account.provider === 'codex' && <ManualResets account={account} now={now} />}
+                      {account.provider === 'claude' && (
+                        <ClaudeLimitResets account={account} now={now} />
+                      )}
                       {account.provider === 'claude' && (
                         <button
                           type="button"

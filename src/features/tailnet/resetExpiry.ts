@@ -18,3 +18,11 @@ export function resetWeekday(resets: number): string {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${weekdays[date.getDay()]} ${hours}:${minutes}`;
 }
+
+/** Local day, month, year, and time for a reset credit's expiry. */
+export function formatResetExpiry(expires: number): string {
+  const date = new Date(expires);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${date.getDate()}.${date.getMonth() + 1}. ${date.getFullYear()} ${hours}:${minutes}`;
+}

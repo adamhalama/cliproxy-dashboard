@@ -23,10 +23,32 @@ export type ClaudeExtraUsage = {
   usedPercent: number | null;
 };
 
+/** One read-only limit reset grant as the provider reported it; nothing here redeems it. */
+export type ClaudeResetGrant = {
+  id: string;
+  label: string;
+  total: number;
+  remaining: number;
+  startsAt: string | null;
+  expiresAt: string | null;
+  /** Provider usage-window keys the grant clears; empty when not reported. */
+  clears: string[];
+  paused: boolean;
+  usableNow: boolean;
+  useRequiresLimit: boolean;
+};
+
+export type ClaudeManualResets = {
+  eligible: boolean;
+  grants: ClaudeResetGrant[];
+};
+
 export type ClaudeUsage = {
   checkedAt: string | null;
   windows: ClaudeUsageWindow[];
   extraUsage: ClaudeExtraUsage | null;
+  /** Absent from older helpers; null when the provider block was missing or malformed. */
+  manualResets?: ClaudeManualResets | null;
 };
 
 export type Account = {
