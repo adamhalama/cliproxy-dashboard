@@ -1210,7 +1210,7 @@ export function TailnetApp() {
         if (result.refreshErrors.length) {
           setUsageError(result.refreshErrors.join(' '));
         } else {
-          setNotice('Usage refreshed. Reported provider limits are shown below.');
+          setNotice('Usage refreshed.');
         }
       }
     } catch (error) {
@@ -1224,6 +1224,11 @@ export function TailnetApp() {
       }
     }
   }
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(''), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   useEffect(() => {
     alive.current = true;
     void refresh();
@@ -1706,7 +1711,7 @@ export function TailnetApp() {
             <div className={styles.pageToolbar}>{refreshControls}</div>
           )}
           {notice && (
-            <div className={styles.successNotice} role="status">
+            <div className={`${styles.successNotice} ${styles.toast}`} role="status">
               <Icon name="check" />
               <p>{notice}</p>
               <button

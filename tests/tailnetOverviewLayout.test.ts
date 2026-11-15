@@ -112,4 +112,10 @@ describe('overview layout source contract', () => {
     );
     expect(source).toContain('<h1 className={styles.srOnly}>{pages[page].label}</h1>');
   });
+
+  test('success messages float as a toast that clears itself', () => {
+    expect(source).toContain('className={`${styles.successNotice} ${styles.toast}`} role="status"');
+    expect(source).toContain("window.setTimeout(() => setNotice(''), 5000)");
+    expect(source).not.toContain('Reported provider limits are shown below.');
+  });
 });

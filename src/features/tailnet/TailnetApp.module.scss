@@ -1095,6 +1095,23 @@
     flex: 1;
   }
 }
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 40;
+  max-width: min(420px, calc(100vw - 32px));
+  margin: 0 !important;
+  padding-block: 9px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 45%);
+  animation: toastIn 160ms var(--ease-out-strong, ease-out);
+}
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
 .overviewStrip {
   display: flex;
   align-items: center;
@@ -1819,6 +1836,12 @@
   }
 }
 @media (max-width: 540px) {
+  .toast {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: none;
+  }
   .main {
     padding-inline: 16px;
     padding-top: 22px;
