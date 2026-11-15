@@ -1846,8 +1846,11 @@
   .tabsRow {
     flex-wrap: wrap;
     gap: 0 8px;
+    > .providerTabs {
+      flex-basis: 100%;
+    }
     > button {
-      margin-bottom: 8px;
+      margin-block: 8px;
     }
   }
   .providerTabs {
