@@ -7,6 +7,15 @@ import { dashboardApi } from './api';
 import { checkLoginTarget } from './login';
 import { ClaudeUsage } from './ClaudeUsage';
 import { resetExpiryCountdown } from './resetExpiry';
+import {
+  defaultSummaryKinds,
+  moveProvider,
+  normalizeIdList,
+  normalizeProviderOrder,
+  normalizeSummaryKinds,
+} from './preferences';
+import type { ProviderId, SummaryKind } from './preferences';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import type { Account, DashboardStatus, LoginResult, QuotaWindow, SchedulerPlugin } from './types';
 import styles from './TailnetApp.module.scss';
 
@@ -33,31 +42,26 @@ type IconName =
   | 'arrow'
   | 'pause';
 
-const pages: Record<Page, { label: string; icon: IconName; description: string }> = {
+const pages: Record<Page, { label: string; icon: IconName }> = {
   overview: {
     label: 'Overview',
     icon: 'grid',
-    description: 'Your subscriptions and proxy, in one place.',
   },
   quota: {
     label: 'Quota management',
     icon: 'quota',
-    description: 'Remaining capacity, reset windows, and accounts that need attention.',
   },
   accounts: {
     label: 'Accounts & login',
     icon: 'users',
-    description: 'Manage account names, routing priority, and provider sign-ins.',
   },
   routing: {
     label: 'Routing & settings',
     icon: 'sliders',
-    description: 'See how your subscriptions are ordered for the proxy.',
   },
   connection: {
     label: 'Connection',
     icon: 'server',
-    description: 'Your dashboard and API endpoints on the Lenovo server.',
   },
 };
 const providerNames = { codex: 'Codex', claude: 'Claude' };
@@ -435,16 +439,21 @@ export function QuotaMeter({
   );
 }
 
+const summaryKindLabels: Record<SummaryKind, string> = { weekly: 'Weekly', five_hour: '5-hour' };
+
 export function Summary({
   provider,
   accounts,
   now,
+  kind = defaultSummaryKinds[provider],
+  onKindChange,
 }: {
   provider: Account['provider'];
   accounts: Account[];
   now: number;
+  kind?: SummaryKind;
+  onKindChange?: (kind: SummaryKind) => void;
 }) {
-  const kind = provider === 'claude' ? 'five_hour' : 'weekly';
   const activeAccounts = accounts.filter((account) => !account.paused);
   const windows = activeAccounts.map((account) => ({
     account,
@@ -469,22 +478,57 @@ export function Summary({
     0
   );
   return (
-    <section className={styles.providerSummary} aria-label={`${providerNames[provider]} summary`}>
+    <section
+      className={`${styles.providerSummary} ${onKindChange ? styles.switchableSummary : ''}`}
+      aria-label={`${providerNames[provider]} summary`}
+      title={
+        onKindChange
+          ? `Click to show ${kind === 'weekly' ? '5-hour' : 'weekly'} capacity`
+          : undefined
+      }
+      onClick={(event) => {
+        // The window buttons handle their own clicks; the rest of the card toggles.
+        if (!onKindChange || (event.target as Element).closest('button')) return;
+        onKindChange(kind === 'weekly' ? 'five_hour' : 'weekly');
+      }}
+    >
       <div className={styles.summaryHeading}>
         <span>
           <ProviderIcon provider={provider} />
           <strong>{providerNames[provider]}</strong>
         </span>
-        <span>
-          {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}
-        </span>
+        {onKindChange ? (
+          <span
+            className={styles.windowSwitch}
+            role="group"
+            aria-label={`${providerNames[provider]} summary window`}
+          >
+            {(['weekly', 'five_hour'] as const).map((value) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={kind === value}
+                className={kind === value ? styles.windowSwitchActive : undefined}
+                onClick={() => onKindChange(value)}
+              >
+                {value === 'weekly' ? 'Week' : '5h'}
+              </button>
+            ))}
+          </span>
+        ) : (
+          <span>
+            {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}
+          </span>
+        )}
       </div>
       <span className={styles.summaryLabel}>
-        {kind === 'weekly'
-          ? observed.length
-            ? 'Weekly remaining'
-            : 'Weekly usage unavailable'
-          : '5-hour capacity remaining'}
+        {summaryKindLabels[kind]} {observed.length ? 'remaining' : 'usage unavailable'}
+        {onKindChange && (
+          <span className={styles.summaryCount}>
+            {' · '}
+            {accounts.length} {accounts.length === 1 ? 'account' : 'accounts'}
+          </span>
+        )}
       </span>
       <div className={styles.summaryValue}>
         {observed.length ? `${Math.round(sum)}%` : '—'}
@@ -1105,6 +1149,21 @@ export function TailnetApp() {
   const [provider, setProvider] = useState<Provider>('all');
   const [sort, setSort] = useState<Sort>('reset');
   const [search, setSearch] = useState('');
+  const [savedProviderOrder, setProviderOrder] = useLocalStorage<unknown>(
+    'tailnet.providerOrder',
+    null
+  );
+  const [savedSummaryKinds, setSummaryKinds] = useLocalStorage<unknown>(
+    'tailnet.summaryKinds',
+    null
+  );
+  const [savedUsageDetails, setUsageDetails] = useLocalStorage<unknown>(
+    'tailnet.expandedUsageDetails',
+    []
+  );
+  const providerOrder = normalizeProviderOrder(savedProviderOrder);
+  const summaryKinds = normalizeSummaryKinds(savedSummaryKinds);
+  const expandedUsageDetails = normalizeIdList(savedUsageDetails);
   const [mobileNav, setMobileNav] = useState(false);
   const [managing, setManaging] = useState<Account | null>(null);
   const snapshotVersion = useRef(0);
@@ -1238,9 +1297,17 @@ export function TailnetApp() {
         (window) => quotaState(accountWindow(account, window.kind), now) === 'stale'
       )
   );
-  const availableProviders = (['codex', 'claude'] as const).filter((value) =>
+  const availableProviders = providerOrder.filter((value) =>
     accounts.some((account) => account.provider === value)
   );
+  const reorderProvider = (value: ProviderId, direction: -1 | 1) =>
+    setProviderOrder(moveProvider(providerOrder, availableProviders, value, direction));
+  const toggleUsageDetails = (id: string) =>
+    setUsageDetails(
+      expandedUsageDetails.includes(id)
+        ? expandedUsageDetails.filter((item) => item !== id)
+        : [...expandedUsageDetails, id]
+    );
   const query = search.trim().toLowerCase();
   const filtered = accounts.filter(
     (account) =>
@@ -1332,6 +1399,8 @@ export function TailnetApp() {
             provider={value}
             accounts={accounts.filter((account) => account.provider === value)}
             now={now}
+            kind={summaryKinds[value]}
+            onKindChange={(kind) => setSummaryKinds({ ...summaryKinds, [value]: kind })}
           />
         ))}
     </div>
@@ -1340,7 +1409,7 @@ export function TailnetApp() {
     <div className={styles.ledger}>
       {availableProviders
         .filter((value) => provider === 'all' || provider === value)
-        .map((value) => {
+        .map((value, index, shown) => {
           const group = visibleAccounts.filter((account) => account.provider === value);
           if (!group.length) return null;
           return (
@@ -1355,7 +1424,30 @@ export function TailnetApp() {
                   {providerNames[value]}
                   <span>{group.length}</span>
                 </h2>
-                <span>Quota remaining</span>
+                {provider === 'all' && shown.length > 1 && (
+                  <span className={styles.reorderControls}>
+                    <button
+                      type="button"
+                      className={styles.iconButton}
+                      disabled={index === 0}
+                      onClick={() => reorderProvider(value, -1)}
+                      aria-label={`Move ${providerNames[value]} up`}
+                      title={`Move ${providerNames[value]} up`}
+                    >
+                      <Icon name="chevron" className={styles.chevronUp} />
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.iconButton}
+                      disabled={index === shown.length - 1}
+                      onClick={() => reorderProvider(value, 1)}
+                      aria-label={`Move ${providerNames[value]} down`}
+                      title={`Move ${providerNames[value]} down`}
+                    >
+                      <Icon name="chevron" className={styles.chevronDown} />
+                    </button>
+                  </span>
+                )}
               </div>
               {group.map((account) => (
                 <Fragment key={account.id}>
@@ -1383,6 +1475,27 @@ export function TailnetApp() {
                         </div>
                       )}
                       {account.provider === 'codex' && <ManualResets account={account} now={now} />}
+                      {account.provider === 'claude' && (
+                        <button
+                          type="button"
+                          className={styles.detailsToggle}
+                          aria-expanded={expandedUsageDetails.includes(account.id)}
+                          aria-controls={`usage-details-${account.id}`}
+                          onClick={() => toggleUsageDetails(account.id)}
+                        >
+                          <Icon
+                            name="chevron"
+                            className={
+                              expandedUsageDetails.includes(account.id)
+                                ? styles.chevronDown
+                                : undefined
+                            }
+                          />
+                          {expandedUsageDetails.includes(account.id)
+                            ? 'Hide usage details'
+                            : 'Show usage details'}
+                        </button>
+                      )}
                     </div>
                     <QuotaMeter
                       kind="weekly"
@@ -1444,7 +1557,11 @@ export function TailnetApp() {
                       />
                     )}
                   </article>
-                  {account.provider === 'claude' && <ClaudeUsage account={account} now={now} />}
+                  {account.provider === 'claude' && expandedUsageDetails.includes(account.id) && (
+                    <div id={`usage-details-${account.id}`}>
+                      <ClaudeUsage account={account} now={now} />
+                    </div>
+                  )}
                 </Fragment>
               ))}
             </section>
@@ -1559,31 +1676,24 @@ export function TailnetApp() {
         </header>
         <main id="main-content" className={styles.main} tabIndex={-1}>
           <div className={styles.pageHeading}>
-            <div>
-              <h1>{pages[page].label}</h1>
-              <p>{pages[page].description}</p>
-            </div>
+            <h1>{pages[page].label}</h1>
+            <span
+              className={styles.snapshotLine}
+              title="Saved server snapshot, read every 30 seconds"
+            >
+              <i className={status ? styles.statusDot : styles.statusDotUnknown} />
+              {status ? `Snapshot ${age(status.fetchedAt, now).toLowerCase()}` : 'Connecting…'}
+            </span>
             <button
               type="button"
-              className={styles.button}
+              className={styles.quietButton}
               disabled={refreshing}
               onClick={() => void refresh()}
+              title="Read the saved server snapshot again"
             >
               <Icon name="refresh" className={refreshing ? styles.refreshing : undefined} />
-              {refreshing && !refreshingUsage ? 'Reading snapshot…' : 'Refresh snapshot'}
+              {refreshing && !refreshingUsage ? 'Reading…' : 'Refresh snapshot'}
             </button>
-          </div>
-          <div className={styles.snapshotLine}>
-            <span>
-              <i className={status ? styles.statusDot : styles.statusDotUnknown} />
-              Saved server snapshot
-              {status && (
-                <span className={styles.snapshotTime}>
-                  read {age(status.fetchedAt, now).toLowerCase()}
-                </span>
-              )}
-            </span>
-            <span>Snapshot read every 30s</span>
           </div>
           {notice && (
             <div className={styles.successNotice} role="status">
@@ -1684,7 +1794,30 @@ export function TailnetApp() {
                       </button>
                     </div>
                   )}
-                  {providerTabs}
+                  <div className={styles.tabsRow}>
+                    {providerTabs}
+                    {((codexVisible && status.codexUsageRefreshAvailable) ||
+                      (claudeVisible && status.claudeUsageRefreshAvailable)) && (
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={refreshing}
+                        aria-busy={refreshingUsage}
+                        onClick={() => void refreshUsage()}
+                        title={
+                          provider === 'all'
+                            ? 'Check Codex and Claude provider limits'
+                            : `Check ${providerNames[provider]} provider limits`
+                        }
+                      >
+                        <Icon
+                          name="refresh"
+                          className={refreshingUsage ? styles.refreshing : undefined}
+                        />
+                        {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
+                      </button>
+                    )}
+                  </div>
                   {codexVisible && codexBaseline && (
                     <div className={styles.notice}>
                       <Icon name="alert" />
@@ -1698,29 +1831,6 @@ export function TailnetApp() {
                             : 'The server collector needs an upgrade to report actual usage.'}
                         </p>
                       </div>
-                    </div>
-                  )}
-                  {((codexVisible && status.codexUsageRefreshAvailable) ||
-                    (claudeVisible && status.claudeUsageRefreshAvailable)) && (
-                    <div className={styles.usageToolbar}>
-                      <button
-                        type="button"
-                        className={styles.button}
-                        disabled={refreshing}
-                        aria-busy={refreshingUsage}
-                        onClick={() => void refreshUsage()}
-                      >
-                        <Icon
-                          name="refresh"
-                          className={refreshingUsage ? styles.refreshing : undefined}
-                        />
-                        {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
-                      </button>
-                      <span>
-                        {provider === 'all'
-                          ? 'Checks Codex and Claude provider limits'
-                          : `Checks ${providerNames[provider]} provider limits`}
-                      </span>
                     </div>
                   )}
                   {(codexVisible || claudeVisible) && usageError && (

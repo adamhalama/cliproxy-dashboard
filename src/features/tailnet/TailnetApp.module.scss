@@ -323,22 +323,18 @@
 .pageHeading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 10px;
   h1 {
-    font-size: 27px;
+    font-size: 21px;
     line-height: 1.25;
-    letter-spacing: -0.8px;
+    letter-spacing: -0.5px;
     font-weight: 600;
-  }
-  p {
-    color: var(--console-muted);
-    margin-top: 7px;
-    font-size: 12px;
   }
   > button {
     flex-shrink: 0;
+    margin-left: auto;
   }
 }
 .button,
@@ -414,23 +410,30 @@
   display: none;
 }
 .snapshotLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--console-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tabsRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  color: var(--console-dim);
-  font-size: 10px;
-  margin-bottom: 27px;
   gap: 12px;
-  > span:first-child {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
+  border-bottom: 1px solid var(--console-border);
+  margin-bottom: 14px;
+  > .providerTabs {
+    flex: 1;
+    min-width: 0;
+    border-bottom: 0;
+    margin-bottom: 0 !important;
   }
-}
-.snapshotTime {
-  margin-left: 2px;
-  color: #8c89aa;
+  > button {
+    flex-shrink: 0;
+    min-height: 30px;
+    padding-block: 5px;
+  }
 }
 .providerTabs {
   display: flex;
@@ -521,6 +524,41 @@
     font-size: 13px;
     color: var(--console-text);
   }
+}
+.switchableSummary {
+  cursor: pointer;
+  transition: background 120ms ease;
+  &:hover {
+    background: #1b1a27;
+  }
+}
+.windowSwitch {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid #2b2a3c;
+  border-radius: 6px;
+  background: #15141f;
+  button {
+    min-width: 34px;
+    padding: 2px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--console-dim);
+    font-size: 10px !important;
+    font-weight: 500 !important;
+    &:hover {
+      color: var(--console-text);
+    }
+  }
+  .windowSwitchActive {
+    background: #2a2840;
+    color: var(--console-text);
+  }
+}
+.summaryCount {
+  color: var(--console-dim);
 }
 .summaryLabel {
   display: block;
@@ -769,6 +807,51 @@
   color: var(--console-dim);
   margin-top: 5px;
 }
+.detailsToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  margin-left: -2px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #9694b3;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  svg {
+    width: 11px;
+    height: 11px;
+    transition: transform 120ms ease;
+  }
+  &:hover {
+    color: var(--console-text);
+    background: #201f2e;
+  }
+}
+.chevronUp {
+  transform: rotate(-90deg);
+}
+.chevronDown {
+  transform: rotate(90deg);
+}
+.reorderControls {
+  display: inline-flex;
+  gap: 2px;
+  .iconButton {
+    min-height: 26px;
+    min-width: 26px;
+    padding: 5px;
+    svg {
+      width: 13px;
+      height: 13px;
+    }
+    &:disabled {
+      opacity: 0.35;
+    }
+  }
+}
 .manualResets,
 .summaryResets {
   display: flex;
@@ -954,18 +1037,6 @@
     width: 13px;
     height: 13px;
     color: #6b6799;
-  }
-}
-.usageToolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  margin-bottom: 16px;
-
-  > span {
-    font-size: 11px;
-    color: var(--console-muted);
   }
 }
 .usageCheckError {
@@ -1569,9 +1640,6 @@
     grid-template-columns: 15px 18px minmax(100px, 1fr) 135px 45px 60px 45px;
     gap: 10px;
   }
-  .pageHeading p {
-    max-width: 390px;
-  }
 }
 @media (max-width: 1000px) {
   .sidebar {
@@ -1597,16 +1665,6 @@
   }
   .main {
     padding-inline: 22px;
-  }
-  .pageHeading {
-    align-items: flex-start;
-    h1 {
-      font-size: 24px;
-    }
-    p {
-      max-width: 310px;
-      font-size: 11px;
-    }
   }
   .ledgerRow {
     grid-template-columns: minmax(180px, 1.25fr) 1fr 1fr;
@@ -1757,17 +1815,6 @@
   .main {
     padding: 24px 20px 0;
   }
-  .pageHeading {
-    h1 {
-      font-size: 25px;
-    }
-    p {
-      max-width: 350px;
-    }
-  }
-  .snapshotLine {
-    margin-bottom: 20px;
-  }
   .identityName {
     flex-direction: row;
   }
@@ -1793,27 +1840,14 @@
     font-size: 9px;
     gap: 4px;
   }
-  .pageHeading {
-    flex-direction: column;
-    gap: 14px;
-    h1 {
-      font-size: 25px;
-    }
-    p {
-      font-size: 12px;
-      max-width: 320px;
-    }
-    > button {
-      align-self: flex-start;
-      min-height: 33px;
-    }
+  .pageHeading > button {
+    padding-inline: 6px;
   }
-  .snapshotLine {
+  .tabsRow {
     flex-wrap: wrap;
-    gap: 4px 12px;
-    font-size: 9px;
-    > span:last-child {
-      margin-left: 12px;
+    gap: 0 8px;
+    > button {
+      margin-bottom: 8px;
     }
   }
   .providerTabs {
@@ -2061,16 +2095,13 @@
 // The desktop console favors ledger density, as in the supplied reference.
 @media (min-width: 761px) {
   .topbar {
-    min-height: 56px;
+    min-height: 48px;
   }
   .main {
-    padding-top: 24px;
+    padding-top: 16px;
   }
   .pageHeading {
-    margin-bottom: 11px;
-  }
-  .snapshotLine {
-    margin-bottom: 17px;
+    margin-bottom: 8px;
   }
   .attentionNotice {
     padding-block: 10px;
