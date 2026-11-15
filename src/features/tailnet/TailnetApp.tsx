@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import codexIcon from '@/assets/icons/codex.svg';
 import claudeIcon from '@/assets/icons/claude.svg';
@@ -29,7 +29,8 @@ type IconName =
   | 'alert'
   | 'copy'
   | 'menu'
-  | 'arrow';
+  | 'arrow'
+  | 'pause';
 
 const pages: Record<Page, { label: string; icon: IconName; description: string }> = {
   overview: {
@@ -144,6 +145,7 @@ function Icon({ name, className }: { name: IconName; className?: string }) {
     ),
     menu: <path d="M3 6h18M3 12h18M3 18h18" />,
     arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
+    pause: <path d="M9 6v12M15 6v12" />,
   };
   return (
     <svg
@@ -514,7 +516,7 @@ export function AccountIdentity({ account }: { account: Account }) {
         <strong title={account.alias || account.maskedIdentity}>
           {account.alias || account.maskedIdentity}
         </strong>
-        {account.paused && <span className={styles.badge}>Paused</span>}
+        {account.paused && <PausedBadge />}
         {account.blocked && <span className={styles.blockedBadge}>Auth blocked</span>}
         {!account.blocked && account.windows.some((window) => window.state === 'RetryWait') && (
           <span
@@ -728,17 +730,23 @@ export function EditAccount({
   );
 }
 
-export function PauseAccountAction({
-  account,
-  readOnly = false,
-  onPending,
-  onChanged,
-}: {
+function PausedBadge() {
+  return (
+    <span className={`${styles.badge} ${styles.pausedBadge}`}>
+      <Icon name="pause" />
+      Paused
+    </span>
+  );
+}
+
+type PauseToggleProps = {
   account: Account;
   readOnly?: boolean;
   onPending: () => void;
   onChanged: (message: string, status?: DashboardStatus) => void;
-}) {
+};
+
+function usePauseToggle({ account, readOnly = false, onPending, onChanged }: PauseToggleProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
   const running = useRef(false);
@@ -766,29 +774,94 @@ export function PauseAccountAction({
       if (alive.current) setPending(false);
     }
   }
+  return {
+    pending,
+    error,
+    disabled: pending || readOnly || !account.pauseAvailable,
+    toggle: () => void toggle(),
+  };
+}
+
+function pauseNotes(account: Account, readOnly: boolean) {
+  return [
+    !account.pauseAvailable && 'Account pause is unavailable on this server.',
+    readOnly && 'This preview is read-only.',
+  ].filter((note): note is string => Boolean(note));
+}
+
+/** Pause or resume section inside the Manage dialog. */
+export function PauseAccountAction(props: PauseToggleProps) {
+  const { account, readOnly = false } = props;
+  const { pending, error, disabled, toggle } = usePauseToggle(props);
   return (
-    <div>
-      <button
-        type="button"
-        className={styles.button}
-        disabled={pending || readOnly || !account.pauseAvailable}
-        onClick={() => void toggle()}
-        aria-label={`${account.paused ? 'Resume' : 'Pause'} ${account.alias || account.maskedIdentity}`}
-        title="Briefly restarts the proxy. Sign-in and account settings are kept."
-      >
+    <div className={styles.pausePanel}>
+      <div>
+        <p>
+          {account.paused
+            ? 'Paused. This account receives no new requests and is left out of available capacity.'
+            : 'Pausing stops new requests to this account and leaves it out of available capacity.'}
+        </p>
+        <p className={styles.fieldHelp}>
+          Sign-in, priority, and reserve settings are kept. Pausing or resuming briefly restarts the
+          proxy.
+        </p>
+        {pauseNotes(account, readOnly).map((note) => (
+          <p key={note} className={styles.fieldHelp}>
+            {note}
+          </p>
+        ))}
+        {error && (
+          <p className={styles.errorText} role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <button type="button" className={styles.button} disabled={disabled} onClick={toggle}>
         {pending ? 'Saving…' : account.paused ? 'Resume account' : 'Pause account'}
       </button>
-      {!account.pauseAvailable && (
-        <p className={styles.fieldHelp}>Account pause is unavailable on this server.</p>
-      )}
-      {account.paused && <p className={styles.fieldHelp}>Brief proxy restart</p>}
-      {readOnly && <p className={styles.fieldHelp}>This preview is read-only.</p>}
+    </div>
+  );
+}
+
+/** Compact Resume control that sits in a paused account's row beside its other actions. */
+export function ResumeRowAction({
+  className,
+  buttonClassName,
+  children,
+  ...props
+}: PauseToggleProps & { className: string; buttonClassName: string; children?: ReactNode }) {
+  const { account, readOnly = false } = props;
+  const { pending, error, disabled, toggle } = usePauseToggle(props);
+  const descriptionId = useId();
+  const description = [
+    ...pauseNotes(account, readOnly),
+    'Briefly restarts the proxy. Sign-in and account settings are kept.',
+  ].join(' ');
+  return (
+    <>
+      <div className={className}>
+        <button
+          type="button"
+          className={`${buttonClassName} ${styles.resumeButton}`}
+          disabled={disabled}
+          onClick={toggle}
+          aria-label={`Resume ${account.alias || account.maskedIdentity}`}
+          aria-describedby={descriptionId}
+          title={description}
+        >
+          {pending ? 'Saving…' : 'Resume'}
+        </button>
+        {children}
+        <span id={descriptionId} className={styles.srOnly}>
+          {description}
+        </span>
+      </div>
       {error && (
-        <p className={styles.errorText} role="alert">
+        <p className={`${styles.errorText} ${styles.rowError}`} role="alert">
           {error}
         </p>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1117,6 +1190,17 @@ export function TailnetApp() {
     setNotice(message);
     if (!updated) void refresh();
   };
+  const manageButton = (account: Account, className = styles.quietButton) => (
+    <button
+      type="button"
+      className={className}
+      onClick={() => setManaging(account)}
+      aria-label={`Manage ${account.alias || account.maskedIdentity}`}
+    >
+      Manage
+      {className === styles.quietButton && <Icon name="chevron" />}
+    </button>
+  );
   const blocked = accounts.filter((account) => account.blocked && !account.paused);
   const codexVisible =
     provider !== 'claude' && accounts.some((account) => account.provider === 'codex');
@@ -1304,7 +1388,7 @@ export function TailnetApp() {
                       <strong>{account.provider === 'codex' ? account.priority : '—'}</strong>
                       <small>
                         {account.paused
-                          ? 'Paused'
+                          ? 'Out of rotation'
                           : account.provider === 'claude'
                             ? 'Not applicable'
                             : account.inRoster
@@ -1312,22 +1396,19 @@ export function TailnetApp() {
                               : 'Outside roster'}
                       </small>
                     </div>
-                    <button
-                      type="button"
-                      className={styles.quietButton}
-                      onClick={() => setManaging(account)}
-                      aria-label={`Manage ${account.alias || account.maskedIdentity}`}
-                    >
-                      Manage
-                      <Icon name="chevron" />
-                    </button>
-                    {account.paused && (
-                      <PauseAccountAction
+                    {account.paused ? (
+                      <ResumeRowAction
                         account={account}
                         readOnly={status?.readOnly}
                         onPending={pausePending}
                         onChanged={pauseChanged}
-                      />
+                        className={styles.rowActions}
+                        buttonClassName={styles.button}
+                      >
+                        {manageButton(account)}
+                      </ResumeRowAction>
+                    ) : (
+                      manageButton(account)
                     )}
                     {account.provider === 'codex' && (
                       <ManualResetExpirations account={account} now={now} />
@@ -1744,39 +1825,39 @@ export function TailnetApp() {
                         </div>
                         <AccountIdentity account={account} />
                         <div className={styles.accountStatus}>
-                          <span className={account.blocked ? styles.blockedBadge : styles.badge}>
-                            {account.paused
-                              ? 'Paused'
-                              : account.blocked
+                          {account.paused ? (
+                            <span className={styles.statusText}>Out of rotation</span>
+                          ) : (
+                            <span className={account.blocked ? styles.blockedBadge : styles.badge}>
+                              {account.blocked
                                 ? 'Sign-in required'
                                 : account.inRoster
                                   ? 'In rotation'
                                   : 'Outside roster'}
-                          </span>
+                            </span>
+                          )}
                           <small>
                             {account.provider === 'codex'
                               ? `Priority ${account.priority}${reserveOf(account) > 0 ? ` · ${reserveOf(account)}% 5h reserve` : ''}`
                               : 'Claude subscription'}
                           </small>
                         </div>
-                        <div className={styles.actionRow}>
-                          <button
-                            type="button"
-                            className={styles.button}
-                            onClick={() => setManaging(account)}
-                            aria-label={`Manage ${account.alias || account.maskedIdentity}`}
+                        {account.paused ? (
+                          <ResumeRowAction
+                            account={account}
+                            readOnly={status?.readOnly}
+                            onPending={pausePending}
+                            onChanged={pauseChanged}
+                            className={styles.actionRow}
+                            buttonClassName={styles.button}
                           >
-                            Manage
-                          </button>
-                          {account.paused && (
-                            <PauseAccountAction
-                              account={account}
-                              readOnly={status?.readOnly}
-                              onPending={pausePending}
-                              onChanged={pauseChanged}
-                            />
-                          )}
-                        </div>
+                            {manageButton(account, styles.button)}
+                          </ResumeRowAction>
+                        ) : (
+                          <div className={styles.actionRow}>
+                            {manageButton(account, styles.button)}
+                          </div>
+                        )}
                       </article>
                     ))}
                   </div>
@@ -1980,18 +2061,13 @@ export function TailnetApp() {
       {managing && (
         <Modal title="Manage account" onClose={() => setManaging(null)}>
           <AccountIdentity account={managing} />
-          <p className={styles.fieldHelp}>
-            Paused accounts receive no new requests and are excluded from available capacity. Resume
-            anytime. Sign-in, priority, and reserve settings are kept. Pausing or resuming briefly
-            restarts the proxy.
-          </p>
+          <PauseAccountAction
+            account={managing}
+            readOnly={status?.readOnly}
+            onPending={pausePending}
+            onChanged={pauseChanged}
+          />
           <div className={styles.modalActions}>
-            <PauseAccountAction
-              account={managing}
-              readOnly={status?.readOnly}
-              onPending={pausePending}
-              onChanged={pauseChanged}
-            />
             {managing.provider === 'codex' && (
               <button
                 type="button"
