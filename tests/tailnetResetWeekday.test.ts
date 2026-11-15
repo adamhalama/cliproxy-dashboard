@@ -23,18 +23,22 @@ describe('reset weekday toggle', () => {
     expect(resetWeekday(new Date(2026, 10, 18, 20, 0).getTime())).toBe('Wednesday 20:00');
   });
 
-  test('shows a clickable countdown that can switch to the reset day', () => {
-    const countdown = meter({ onToggleReset: () => {} });
-    expect(countdown).toContain('<button');
-    expect(countdown).toContain('aria-pressed="false"');
-    expect(countdown).toContain('Resets in 3d 7h');
-    expect(countdown).toContain('Click to show all reset days');
+  test.each(['weekly', 'five_hour'] as const)(
+    '%s shows a clickable countdown scoped to its limit type',
+    (kind) => {
+      const label = kind === 'weekly' ? 'weekly' : '5-hour';
+      const countdown = meter({ kind, onToggleReset: () => {} });
+      expect(countdown).toContain('<button');
+      expect(countdown).toContain('aria-pressed="false"');
+      expect(countdown).toContain('Resets in 3d 7h');
+      expect(countdown).toContain(`Click to show all ${label} reset days`);
 
-    const day = meter({ onToggleReset: () => {}, resetDay: true });
-    expect(day).toContain('aria-pressed="true"');
-    expect(day).toContain('Resets Thursday 05:07');
-    expect(day).toContain('Click to show all countdowns');
-  });
+      const day = meter({ kind, onToggleReset: () => {}, resetDay: true });
+      expect(day).toContain('aria-pressed="true"');
+      expect(day).toContain('Resets Thursday 05:07');
+      expect(day).toContain(`Click to show all ${label} countdowns`);
+    }
+  );
 
   test('keeps plain text without a toggle handler or once the reset has passed', () => {
     expect(meter({})).not.toContain('<button');
