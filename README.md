@@ -86,6 +86,11 @@ including the applicable count when supplied. Cached allowances stay labeled
 and do not contribute to summary totals. Missing balances show **Not reported**.
 No reset credits are spent by viewing or refreshing the dashboard.
 
+Click any manual reset expiration date to switch all accounts between local
+dates and time remaining (days, hours, or minutes). Click again to restore dates;
+Enter and Space work too. Countdowns update with the dashboard's 30-second clock.
+The choice stays while navigating or filtering and resets to dates on page reload.
+
 Upgrade an existing Codex collector from an administrator session:
 
 ```sh
