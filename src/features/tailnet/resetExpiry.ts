@@ -8,3 +8,13 @@ export function resetExpiryCountdown(expires: number, now: number): string {
   if (hours < 24) return `Expires in ${hours}h ${minutes % 60}m`;
   return `Expires in ${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
+
+const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Quota windows reset within a week, so the weekday and local time identify the moment. */
+export function resetWeekday(resets: number): string {
+  const date = new Date(resets);
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${weekdays[date.getDay()]} ${hours}:${minutes}`;
+}
