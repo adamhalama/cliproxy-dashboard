@@ -80,12 +80,14 @@ function resetGrant(grant) {
 function manualResets(block) {
   if (!block || typeof block !== 'object' || Array.isArray(block)) return null;
   if (typeof block.eligible !== 'boolean') return null;
+  const atLimit = resetFlag(block.atLimit, false);
+  if (atLimit === invalid) return null;
   const grants = block.grants ?? [];
   if (!Array.isArray(grants) || grants.length > MAX_RESET_GRANTS) return null;
   const parsed = grants.map(resetGrant);
   if (parsed.includes(null)) return null;
   if (new Set(parsed.map((grant) => grant.id)).size !== parsed.length) return null;
-  return { eligible: block.eligible, grants: parsed };
+  return { eligible: block.eligible, atLimit, grants: parsed };
 }
 
 export function parseClaudeUsage(output) {

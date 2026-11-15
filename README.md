@@ -142,3 +142,15 @@ usage appear beneath the Claude row. Extra usage amounts are converted from
 cents to dollars. Optional limits appear only when Anthropic supplies them.
 
 Design work uses Anthropic’s [frontend-design skill](https://github.com/anthropics/skills/tree/main/skills/frontend-design), included with its license under `docs/design/`.
+
+## Claude limit resets
+
+Claude account rows show the reported reset balance. Expand **Show usage details**
+for each grant's label, remaining count, expiry, and the limits it clears. Partial
+resets such as Fable are distinguished from full weekly resets. Failed, overdue,
+and paused observations stay labeled as cached; missing balances are not zero.
+Viewing and refreshing never redeem a reset.
+
+This needs the matching Claude collector/helper upgrade in
+[easycliproxy-quota-setup](https://github.com/adamhalama/easycliproxy-quota-setup/blob/main/server/CLAUDE_USAGE.md).
+Older helpers keep working and show reset details as not reported.

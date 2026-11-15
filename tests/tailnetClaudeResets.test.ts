@@ -133,7 +133,7 @@ describe('Claude reset grant states', () => {
 
   test('expired, spent, upcoming, paused, ineligible, and unusable grants', () => {
     const status = (fields: object, eligible = true) =>
-      claudeResetGrantStatus({ ...grant, ...fields }, eligible, 'fresh', now).text;
+      claudeResetGrantStatus({ ...grant, ...fields }, eligible, 'fresh', now, true).text;
     expect(status({})).toBe('Usable now');
     expect(status({ expiresAt: '2026-11-15T11:00:00Z' })).toBe('Expired');
     expect(status({ remaining: 0 })).toBe('Spent');
@@ -142,6 +142,22 @@ describe('Claude reset grant states', () => {
     expect(status({}, false)).toBe('Account not eligible');
     expect(status({ usableNow: false })).toBe('Not usable now; only once a limit is reached');
     expect(status({ usableNow: false, useRequiresLimit: false })).toBe('Not usable now');
+  });
+
+  test('limit-required grants are not usable before the account reaches a limit', () => {
+    for (const atLimit of [false, undefined]) {
+      expect(claudeResetGrantStatus(grant, true, 'fresh', now, atLimit).tone).toBe('muted');
+    }
+    expect(
+      claudeResetGrantStatus({ ...grant, useRequiresLimit: false }, true, 'fresh', now, false).tone
+    ).toBe('ready');
+    const account = claude('not_limited');
+    expect(account.claudeUsage?.manualResets?.atLimit).toBe(false);
+    expect(row(account)).not.toContain('usable now');
+    expect(details(account)).not.toContain('Usable now');
+    expect(details(account)).toContain('only once a limit is reached');
+    expect(parse({ eligible: true, atLimit: 'yes', grants: [grant] })).toBeNull();
+    expect(parse({ eligible: true, grants: [grant] }).atLimit).toBe(false);
   });
 
   test('balance excludes expired grants and keeps explicit zero', () => {

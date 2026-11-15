@@ -51,7 +51,8 @@ export function claudeResetGrantStatus(
   grant: ClaudeResetGrant,
   eligible: boolean,
   freshness: ClaudeResetFreshness,
-  now: number
+  now: number,
+  atLimit = false
 ): ClaudeResetGrantStatus {
   const starts = time(grant.startsAt);
   if (claudeResetExpired(grant, now)) return { text: 'Expired', tone: 'muted' };
@@ -60,6 +61,8 @@ export function claudeResetGrantStatus(
   if (grant.paused) return { text: 'Paused by provider', tone: 'warning' };
   if (!eligible) return { text: 'Account not eligible', tone: 'warning' };
   if (freshness !== 'fresh') return { text: 'Availability needs a fresh check', tone: 'warning' };
+  if (grant.useRequiresLimit && !atLimit)
+    return { text: 'Not usable now; only once a limit is reached', tone: 'muted' };
   if (grant.usableNow) return { text: 'Usable now', tone: 'ready' };
   return {
     text: grant.useRequiresLimit

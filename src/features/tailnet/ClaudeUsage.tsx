@@ -106,6 +106,7 @@ function ResetGrant({
   grant,
   index,
   eligible,
+  atLimit,
   freshness,
   windows,
   now,
@@ -113,11 +114,12 @@ function ResetGrant({
   grant: ClaudeResetGrant;
   index: number;
   eligible: boolean;
+  atLimit: boolean;
   freshness: ReturnType<typeof claudeResetFreshness>;
   windows: ClaudeUsageWindow[];
   now: number;
 }) {
-  const status = claudeResetGrantStatus(grant, eligible, freshness, now);
+  const status = claudeResetGrantStatus(grant, eligible, freshness, now, atLimit);
   const label = grant.label || `Limit reset ${index + 1}`;
   return (
     <li className={styles.grant}>
@@ -201,6 +203,7 @@ function LimitResets({ account, now }: { account: Account; now: number }) {
                 grant={grant}
                 index={index}
                 eligible={resets.eligible}
+                atLimit={resets.atLimit}
                 freshness={freshness}
                 windows={usage.windows}
                 now={now}

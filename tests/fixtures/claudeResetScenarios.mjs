@@ -126,12 +126,20 @@ function mixedGrants(now) {
 
 const scenarios = {
   /** Every grant state at once on a fresh observation. */
-  mixed: (now) => ({ usage: usage(now, { eligible: true, grants: mixedGrants(now) }) }),
+  mixed: (now) => ({
+    usage: usage(now, { atLimit: true, eligible: true, grants: mixedGrants(now) }),
+  }),
+  not_limited: (now) => ({
+    usage: usage(now, { eligible: true, atLimit: false, grants: mixedGrants(now) }),
+  }),
   /** Provider says the account is not eligible. */
-  ineligible: (now) => ({ usage: usage(now, { eligible: false, grants: mixedGrants(now) }) }),
+  ineligible: (now) => ({
+    usage: usage(now, { atLimit: true, eligible: false, grants: mixedGrants(now) }),
+  }),
   /** Explicit zero: eligible with only spent grants. */
   zero: (now) => ({
     usage: usage(now, {
+      atLimit: true,
       eligible: true,
       grants: [
         grant({
@@ -146,19 +154,23 @@ const scenarios = {
     }),
   }),
   /** Eligible with no grants at all. */
-  empty: (now) => ({ usage: usage(now, { eligible: true, grants: [] }) }),
+  empty: (now) => ({ usage: usage(now, { atLimit: true, eligible: true, grants: [] }) }),
   /** Saved two hours ago; counts are cached. */
   stale: (now) => ({
-    usage: usage(now, { eligible: true, grants: mixedGrants(now) }, iso(now, -2 * hour)),
+    usage: usage(
+      now,
+      { atLimit: true, eligible: true, grants: mixedGrants(now) },
+      iso(now, -2 * hour)
+    ),
   }),
   /** Latest Claude check failed; saved counts remain. */
   failed: (now) => ({
-    usage: usage(now, { eligible: true, grants: mixedGrants(now) }),
+    usage: usage(now, { atLimit: true, eligible: true, grants: mixedGrants(now) }),
     failed: true,
   }),
   /** Account paused in the dashboard; it is not contacted. */
   paused: (now) => ({
-    usage: usage(now, { eligible: true, grants: mixedGrants(now) }),
+    usage: usage(now, { atLimit: true, eligible: true, grants: mixedGrants(now) }),
     paused: true,
   }),
   /** Updated helper, but the provider block was missing or malformed. */

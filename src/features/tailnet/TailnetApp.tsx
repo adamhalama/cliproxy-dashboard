@@ -290,7 +290,9 @@ export function ClaudeLimitResets({ account, now }: { account: Account; now: num
   const freshness = claudeResetFreshness(account, now);
   const usable =
     resets?.grants.filter(
-      (grant) => claudeResetGrantStatus(grant, resets.eligible, freshness, now).tone === 'ready'
+      (grant) =>
+        claudeResetGrantStatus(grant, resets.eligible, freshness, now, resets.atLimit).tone ===
+        'ready'
     ).length ?? 0;
   return (
     <div className={styles.manualResets}>

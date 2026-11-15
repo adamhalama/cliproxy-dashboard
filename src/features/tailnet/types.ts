@@ -40,6 +40,7 @@ export type ClaudeResetGrant = {
 
 export type ClaudeManualResets = {
   eligible: boolean;
+  atLimit: boolean;
   grants: ClaudeResetGrant[];
 };
 
