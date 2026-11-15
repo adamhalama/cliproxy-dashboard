@@ -313,7 +313,7 @@ export function ManualResetExpirations({
               className={styles.resetExpiryToggle}
               onClick={onToggle}
               aria-pressed={countdown}
-              aria-label={`Show all reset expirations as ${countdown ? 'dates' : 'time remaining'}`}
+              aria-description={`Show all reset expirations as ${countdown ? 'dates' : 'time remaining'}`}
               title={`${formatResetExpiry(expires)} · Click to show all ${countdown ? 'dates' : 'countdowns'}`}
             >
               {count} x{' '}

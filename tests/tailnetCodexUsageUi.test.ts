@@ -172,9 +172,12 @@ describe('manual reset expiration dates', () => {
     const absolute = resets(credits);
     expect(absolute).toContain('type="button"');
     expect(absolute).toContain('aria-pressed="false"');
+    expect(absolute).not.toContain('aria-label=');
+    expect(absolute).toContain('aria-description="Show all reset expirations as time remaining"');
     expect(absolute).toContain('Show all reset expirations as time remaining');
     const relative = resets(credits, now, true);
     expect(relative).toContain('aria-pressed="true"');
+    expect(relative).not.toContain('aria-label=');
     expect(relative).toContain('Show all reset expirations as dates');
     expect(relative).toContain(`dateTime="${date}"`);
     expect(relative).toContain('2 x <time');
