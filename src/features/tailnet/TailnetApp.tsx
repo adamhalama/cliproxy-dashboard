@@ -6,7 +6,7 @@ import { copyToClipboard } from '@/utils/clipboard';
 import { dashboardApi } from './api';
 import { checkLoginTarget } from './login';
 import { ClaudeUsage } from './ClaudeUsage';
-import { resetExpiryCountdown } from './resetExpiry';
+import { resetExpiryCountdown, resetWeekday } from './resetExpiry';
 import {
   defaultSummaryKinds,
   moveProvider,
@@ -352,6 +352,8 @@ export function QuotaMeter({
   reserve = 0,
   reserveEnforced = true,
   reserveUnconfirmed = false,
+  resetDay = false,
+  onToggleReset,
 }: {
   window?: QuotaWindow;
   kind: QuotaWindow['kind'];
@@ -362,7 +364,12 @@ export function QuotaMeter({
   reserveEnforced?: boolean;
   /** The helper could not tell which plugin runs, so enforcement is unknown rather than off. */
   reserveUnconfirmed?: boolean;
+  /** Show the reset as a weekday and time instead of a countdown. */
+  resetDay?: boolean;
+  /** When set, clicking the reset time switches meters of this kind between countdown and weekday. */
+  onToggleReset?: () => void;
 }) {
+  const resetAt = timestamp(window?.resetAt ?? null);
   const value = blocked || scheduleOnly ? null : remaining(window);
   const state = quotaState(window, now);
   const stale = state === 'stale' || blocked;
@@ -396,15 +403,32 @@ export function QuotaMeter({
         className={`${styles.meterCaption} ${stale ? styles.staleCaption : ''}`}
         title={dateLabel(window?.resetAt ?? null)}
       >
-        {blocked
-          ? 'Unavailable · sign-in required'
-          : scheduleOnly
-            ? timestamp(window?.resetAt ?? null)
-              ? `Scheduled reset ${dateLabel(window?.resetAt ?? null)}`
-              : 'Reset schedule unavailable'
-            : value === null
-              ? 'Not reported'
-              : timeUntil(window?.resetAt ?? null, now)}
+        {blocked ? (
+          'Unavailable · sign-in required'
+        ) : scheduleOnly ? (
+          timestamp(window?.resetAt ?? null) ? (
+            `Scheduled reset ${dateLabel(window?.resetAt ?? null)}`
+          ) : (
+            'Reset schedule unavailable'
+          )
+        ) : value === null ? (
+          'Not reported'
+        ) : onToggleReset && resetAt > now ? (
+          <button
+            type="button"
+            className={styles.resetExpiryToggle}
+            onClick={onToggleReset}
+            aria-pressed={resetDay}
+            aria-description={`Show all ${kind === 'weekly' ? 'weekly' : '5-hour'} reset times as ${resetDay ? 'time remaining' : 'weekdays'}`}
+            title={`${formatResetExpiry(resetAt)} · Click to show all ${kind === 'weekly' ? 'weekly' : '5-hour'} ${resetDay ? 'countdowns' : 'reset days'}`}
+          >
+            <time dateTime={new Date(resetAt).toISOString()}>
+              {resetDay ? `Resets ${resetWeekday(resetAt)}` : timeUntil(window!.resetAt, now)}
+            </time>
+          </button>
+        ) : (
+          timeUntil(window?.resetAt ?? null, now)
+        )}
       </div>
       {state === 'stale' && !blocked && !scheduleOnly && (
         <span className={styles.staleLabel}>Cached usage; needs update</span>
@@ -1145,6 +1169,10 @@ export function TailnetApp() {
   const [usageError, setUsageError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [resetExpiryCountdownShown, setResetExpiryCountdownShown] = useState(false);
+  const [resetDayShown, setResetDayShown] = useState<Record<QuotaWindow['kind'], boolean>>({
+    weekly: false,
+    five_hour: false,
+  });
   const [provider, setProvider] = useState<Provider>('all');
   const [sort, setSort] = useState<Sort>('reset');
   const [search, setSearch] = useState('');
@@ -1268,6 +1296,10 @@ export function TailnetApp() {
     setLoginTarget(account);
     setLogin(account.provider);
   }
+  const toggleResetDay = (kind: QuotaWindow['kind']) => {
+    setNow(Date.now());
+    setResetDayShown((shown) => ({ ...shown, [kind]: !shown[kind] }));
+  };
   const pausePending = () => {
     snapshotVersion.current += 1;
   };
@@ -1542,6 +1574,8 @@ export function TailnetApp() {
                       scheduleOnly={
                         account.provider === 'codex' && account.quotaSource !== 'provider'
                       }
+                      resetDay={resetDayShown.weekly}
+                      onToggleReset={() => toggleResetDay('weekly')}
                     />
                     <QuotaMeter
                       kind="five_hour"
@@ -1554,6 +1588,8 @@ export function TailnetApp() {
                       reserve={reserveOf(account)}
                       reserveEnforced={reserveEnforced}
                       reserveUnconfirmed={reserveUnconfirmed}
+                      resetDay={resetDayShown.five_hour}
+                      onToggleReset={() => toggleResetDay('five_hour')}
                     />
                     <div className={styles.priorityCell}>
                       <span>Priority</span>
