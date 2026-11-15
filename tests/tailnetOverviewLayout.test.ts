@@ -102,5 +102,14 @@ describe('overview layout source contract', () => {
     expect(source).not.toContain('Your subscriptions and proxy, in one place.');
     expect(source).not.toContain('Snapshot read every 30s');
     expect(source).not.toContain('Checks Codex and Claude provider limits');
+    expect(source).not.toContain('Refresh snapshot');
+    expect(source).not.toContain('Refresh usage');
+  });
+
+  test('one Refresh button checks provider usage when available, else rereads the snapshot', () => {
+    expect(source).toContain(
+      'onClick={() => void (usageRefreshable ? refreshUsage() : refresh())}'
+    );
+    expect(source).toContain('<h1 className={styles.srOnly}>{pages[page].label}</h1>');
   });
 });

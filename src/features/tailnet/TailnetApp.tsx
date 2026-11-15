@@ -1142,7 +1142,6 @@ export function TailnetApp() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshingUsage, setRefreshingUsage] = useState(false);
   const [usageError, setUsageError] = useState('');
   const [now, setNow] = useState(() => Date.now());
   const [resetExpiryCountdownShown, setResetExpiryCountdownShown] = useState(false);
@@ -1200,7 +1199,6 @@ export function TailnetApp() {
     if (inFlight.current) return;
     inFlight.current = true;
     setRefreshing(true);
-    setRefreshingUsage(true);
     setUsageError('');
     setNotice('');
     const version = snapshotVersion.current;
@@ -1222,7 +1220,6 @@ export function TailnetApp() {
       inFlight.current = false;
       if (alive.current) {
         setRefreshing(false);
-        setRefreshingUsage(false);
         setNow(Date.now());
       }
     }
@@ -1367,6 +1364,35 @@ export function TailnetApp() {
         <span className={styles.navCount}>{accounts.length}</span>
       )}
     </a>
+  );
+  const usagePage = page === 'quota' || page === 'overview';
+  const usageRefreshable =
+    usagePage &&
+    !!status &&
+    ((codexVisible && status.codexUsageRefreshAvailable) ||
+      (claudeVisible && status.claudeUsageRefreshAvailable));
+  const refreshControls = (
+    <div className={styles.refreshControls}>
+      <span className={styles.snapshotLine} title="Saved server snapshot, read every 30 seconds">
+        <i className={status ? styles.statusDot : styles.statusDotUnknown} />
+        {status ? `Updated ${age(status.fetchedAt, now).toLowerCase()}` : 'Connecting…'}
+      </span>
+      <button
+        type="button"
+        className={styles.button}
+        disabled={refreshing}
+        aria-busy={refreshing}
+        onClick={() => void (usageRefreshable ? refreshUsage() : refresh())}
+        title={
+          usageRefreshable
+            ? `Read the server snapshot and check ${provider === 'all' ? 'Codex and Claude' : providerNames[provider]} provider limits`
+            : 'Read the server snapshot again'
+        }
+      >
+        <Icon name="refresh" className={refreshing ? styles.refreshing : undefined} />
+        {refreshing ? 'Refreshing…' : 'Refresh'}
+      </button>
+    </div>
   );
   const providerTabs = (
     <div className={styles.providerTabs} role="group" aria-label="Filter by provider">
@@ -1675,26 +1701,10 @@ export function TailnetApp() {
           </div>
         </header>
         <main id="main-content" className={styles.main} tabIndex={-1}>
-          <div className={styles.pageHeading}>
-            <h1>{pages[page].label}</h1>
-            <span
-              className={styles.snapshotLine}
-              title="Saved server snapshot, read every 30 seconds"
-            >
-              <i className={status ? styles.statusDot : styles.statusDotUnknown} />
-              {status ? `Snapshot ${age(status.fetchedAt, now).toLowerCase()}` : 'Connecting…'}
-            </span>
-            <button
-              type="button"
-              className={styles.quietButton}
-              disabled={refreshing}
-              onClick={() => void refresh()}
-              title="Read the saved server snapshot again"
-            >
-              <Icon name="refresh" className={refreshing ? styles.refreshing : undefined} />
-              {refreshing && !refreshingUsage ? 'Reading…' : 'Refresh snapshot'}
-            </button>
-          </div>
+          <h1 className={styles.srOnly}>{pages[page].label}</h1>
+          {!(usagePage && status && !loading) && (
+            <div className={styles.pageToolbar}>{refreshControls}</div>
+          )}
           {notice && (
             <div className={styles.successNotice} role="status">
               <Icon name="check" />
@@ -1796,27 +1806,7 @@ export function TailnetApp() {
                   )}
                   <div className={styles.tabsRow}>
                     {providerTabs}
-                    {((codexVisible && status.codexUsageRefreshAvailable) ||
-                      (claudeVisible && status.claudeUsageRefreshAvailable)) && (
-                      <button
-                        type="button"
-                        className={styles.button}
-                        disabled={refreshing}
-                        aria-busy={refreshingUsage}
-                        onClick={() => void refreshUsage()}
-                        title={
-                          provider === 'all'
-                            ? 'Check Codex and Claude provider limits'
-                            : `Check ${providerNames[provider]} provider limits`
-                        }
-                      >
-                        <Icon
-                          name="refresh"
-                          className={refreshingUsage ? styles.refreshing : undefined}
-                        />
-                        {refreshingUsage ? 'Refreshing usage…' : 'Refresh usage'}
-                      </button>
-                    )}
+                    {refreshControls}
                   </div>
                   {codexVisible && codexBaseline && (
                     <div className={styles.notice}>
@@ -1827,7 +1817,7 @@ export function TailnetApp() {
                           Previous percentages were window activation baselines. Only reset
                           schedules are available for accounts without provider observations.{' '}
                           {status.codexUsageRefreshAvailable
-                            ? 'Refresh usage to check provider limits.'
+                            ? 'Refresh to check provider limits.'
                             : 'The server collector needs an upgrade to report actual usage.'}
                         </p>
                       </div>
@@ -1923,9 +1913,7 @@ export function TailnetApp() {
                     <Icon name="shield" />
                     Codex percentages use reported provider limits; reset schedules alone do not
                     establish remaining usage. Claude usage is checked every five minutes, and
-                    either provider can be checked on demand. Refresh snapshot reads saved state.
-                    {status.codexUsageRefreshAvailable &&
-                      ' Refresh usage checks the selected providers.'}
+                    either provider can be checked on demand with Refresh.
                   </p>
                 </>
               )}
