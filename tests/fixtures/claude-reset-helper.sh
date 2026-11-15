@@ -4,7 +4,7 @@
 #
 #   bun run build:tailnet
 #   DASHBOARD_HELPER="$PWD/tests/fixtures/claude-reset-helper.sh" DASHBOARD_READ_ONLY=1 \
-#     DASHBOARD_TAILNET_IP=127.0.0.1 DASHBOARD_PORT=8399 node server/dashboard.mjs
+#     DASHBOARD_TAILNET_IP=::1 DASHBOARD_PORT=8399 node server/dashboard.mjs
 #   open http://127.0.0.1:8399/ and expand Claude's usage details.
 #
 # Switch scenarios live (the dashboard re-reads status within seconds):
