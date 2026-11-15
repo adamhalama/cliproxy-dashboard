@@ -26,10 +26,37 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
   let codexUsageRefreshAvailable = false;
   let claudeUsageRefreshAvailable = false;
   let schedulerPlugin = null;
+  let accountControl = null;
   for (const line of output.split('\n')) {
     if (line.startsWith('cliproxy: ')) proxy = line.slice(10).trim();
     else if (line.startsWith('claude-quota-probe.timer: ')) claudeTimer = line.slice(25).trim();
-    else if (line.startsWith('claude usage: ')) claudeUsage = parseClaudeUsage(line.slice(14));
+    else if (line.startsWith('account control: ')) {
+      accountControl = null;
+      try {
+        const control = JSON.parse(line.slice(17));
+        const seen = new Set();
+        if (
+          typeof control?.available === 'boolean' &&
+          Array.isArray(control.accounts) &&
+          control.accounts.every((entry) => {
+            if (
+              !entry ||
+              !['codex', 'claude'].includes(entry.provider) ||
+              typeof entry.id !== 'string' ||
+              !new RegExp(`^${entry.provider}-[A-Za-z0-9._@+-]+\\.json$`).test(entry.id) ||
+              typeof entry.paused !== 'boolean' ||
+              seen.has(entry.id)
+            )
+              return false;
+            seen.add(entry.id);
+            return true;
+          })
+        )
+          accountControl = control;
+      } catch {
+        accountControl = null;
+      }
+    } else if (line.startsWith('claude usage: ')) claudeUsage = parseClaudeUsage(line.slice(14));
     else if (line.startsWith('codex scheduler plugin: ')) {
       // An unknown version is printed as prose; only a bare version proves what is running.
       const version =
@@ -172,6 +199,33 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
       else claude.windows[existing] = window;
     }
   }
+  const pauseFiles = new Map();
+  for (const entry of accountControl?.accounts ?? []) {
+    let target = accounts.find((item) => item.id === accountId(entry.id));
+    if (!target && entry.provider === 'claude')
+      target = accounts.find(
+        (item) => item.id === 'claude-subscription' && !pauseFiles.has(item.id)
+      );
+    if (!target) {
+      target = {
+        id: accountId(entry.id),
+        provider: entry.provider,
+        alias: `${entry.provider === 'codex' ? 'Codex' : 'Claude'} account`,
+        maskedIdentity: 'Server account',
+        plan: entry.provider === 'codex' ? 'Codex' : 'Claude',
+        priority: 0,
+        inRoster: false,
+        blocked: false,
+        windows: [],
+        lastCheckedAt: null,
+      };
+      accounts.push(target);
+    }
+    target.id = accountId(entry.id);
+    target.paused = entry.paused;
+    target.pauseAvailable = accountControl.available;
+    pauseFiles.set(target.id, entry.id);
+  }
   if (proxy === 'unknown') throw new Error('Quota helper returned an unreadable status.');
   return {
     data: {
@@ -182,8 +236,10 @@ export function parseStatus(output, fetchedAt = new Date().toISOString()) {
       codexUsageRefreshAvailable,
       claudeUsageRefreshAvailable,
       schedulerPlugin,
+      accountControlAvailable: accountControl?.available === true,
     },
     authFiles,
+    pauseFiles,
   };
 }
 
@@ -212,9 +268,7 @@ export function parseLogin(output) {
   return {
     state,
     ...(provider ? { provider } : {}),
-    ...(savedFile
-      ? { accountId: provider === 'claude' ? 'claude-subscription' : accountId(savedFile) }
-      : {}),
+    ...(savedFile ? { accountId: accountId(savedFile) } : {}),
     ...(code ? { code } : {}),
     ...(deviceUrl || claudeUrl ? { url: deviceUrl || claudeUrl } : {}),
     message:
@@ -230,7 +284,11 @@ export function parseLogin(output) {
 
 export function verifySavedLogin(login, accounts) {
   if (login.state !== 'succeeded') return login;
-  const account = accounts.find((entry) => entry.id === login.accountId);
+  const account =
+    accounts.find((entry) => entry.id === login.accountId) ??
+    (login.provider === 'claude'
+      ? accounts.find((entry) => entry.id === 'claude-subscription')
+      : undefined);
   const name = account?.alias || 'the account';
   const verification =
     !account || !account.inRoster || !account.windows.length
@@ -242,6 +300,7 @@ export function verifySavedLogin(login, accounts) {
   return {
     ...login,
     verification,
+    ...(account ? { accountId: account.id } : {}),
     ...(account ? { accountAlias: account.alias } : {}),
     message:
       verification === 'pending'

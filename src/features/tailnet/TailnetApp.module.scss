@@ -682,6 +682,43 @@
     justify-self: end;
   }
 }
+// Paused accounts stay in the ledger rhythm; only their data is muted, never their actions.
+.pausedRow {
+  .identityName > strong,
+  .identityMeta > span:first-child,
+  .manualResets > strong,
+  .priorityCell > strong {
+    color: #8e8ca3;
+  }
+  .manualResets,
+  .priorityCell > small {
+    color: var(--console-dim);
+  }
+  .quotaMeter,
+  .accountProvider {
+    filter: grayscale(1);
+    opacity: 0.55;
+  }
+}
+.rowActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  justify-self: end;
+}
+.rowActions > .resumeButton {
+  min-height: 28px;
+  padding: 4px 11px;
+}
+.rowError {
+  grid-column: 1 / -1;
+  justify-self: end;
+  max-width: 420px;
+  margin: 0;
+  font-size: 11px;
+  text-align: right;
+}
 .blockedRow {
   .identityName > strong {
     color: #bebcd5;
@@ -802,6 +839,17 @@
   color: #9e9bbd;
   background: #222033;
   border: 1px solid #2e2b43;
+}
+.pausedBadge {
+  gap: 4px;
+  color: #b2b0c2;
+  background: #24232d;
+  border-color: #35343f;
+  svg {
+    width: 9px;
+    height: 9px;
+    stroke-width: 3.2;
+  }
 }
 .healthyBadge {
   color: #83d4b8;
@@ -1037,12 +1085,16 @@
   gap: 8px;
   align-items: center;
 }
+.accountCard > .actionRow {
+  justify-content: flex-end;
+}
 .accountList {
   border-top: 1px solid var(--console-border);
 }
 .accountCard {
   display: grid;
-  grid-template-columns: 33px minmax(140px, 1fr) 140px auto;
+  // A fixed action column keeps status aligned when a paused card adds Resume.
+  grid-template-columns: 33px minmax(140px, 1fr) 140px minmax(160px, auto);
   gap: 16px;
   align-items: center;
   padding: 21px 0;
@@ -1066,6 +1118,11 @@
     color: var(--console-dim);
     font-size: 10px;
   }
+}
+.statusText {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--console-muted);
 }
 .infoPanel {
   display: flex;
@@ -1401,6 +1458,23 @@
   padding-top: 16px;
   border-top: 1px solid #2d2a48;
 }
+.pausePanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px 0;
+  border-top: 1px solid #2d2a48;
+  > div > p:first-child {
+    font-size: 12px;
+    line-height: 1.7;
+    color: #c4c2dc;
+  }
+  > .button {
+    flex-shrink: 0;
+  }
+}
 .modalIntro {
   color: #a5a1cb;
   font-size: 12px;
@@ -1551,11 +1625,20 @@
         display: none;
       }
     }
-    > .quietButton {
+    > .quietButton,
+    > .rowActions {
       grid-column: 3;
       grid-row: 2;
+    }
+    > .quietButton,
+    > .rowActions > .quietButton,
+    .resumeButton {
       min-height: 26px;
       padding-block: 3px;
+    }
+    > .rowActions {
+      flex-direction: row;
+      align-items: center;
     }
     > div:first-child {
       grid-row: span 2;
@@ -1808,7 +1891,8 @@
         margin-left: 4px;
       }
     }
-    > .quietButton {
+    > .quietButton,
+    > .rowActions {
       grid-column: 2;
       grid-row: 3;
     }
@@ -1887,6 +1971,7 @@
     > .actionRow {
       grid-column: 2;
       grid-row: 3;
+      justify-content: flex-start;
     }
   }
   .settingsPanel {
@@ -1957,6 +2042,10 @@
     .badge {
       margin-left: 0;
     }
+  }
+  .pausePanel {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -36,6 +36,8 @@ export const dashboardApi = {
     id: string,
     settings: { priority: number; alias: string; reserveFiveHourPercent?: number }
   ) => request<{ message: string }>('/api/accounts/priority', { id, ...settings }),
+  setPaused: (id: string, paused: boolean) =>
+    request<{ message: string; status?: DashboardStatus }>('/api/accounts/paused', { id, paused }),
   startLogin: (provider: 'codex' | 'claude') => request<LoginResult>(`/api/login/${provider}`, {}),
   loginStatus: () => request<LoginResult>('/api/login/status'),
   claudeCallback: (url: string) => request<LoginResult>('/api/login/callback', { url }),

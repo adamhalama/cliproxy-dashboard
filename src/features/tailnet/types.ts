@@ -40,6 +40,8 @@ export type Account = {
   reserveFiveHourPercent?: number | null;
   inRoster: boolean;
   blocked: boolean;
+  paused?: boolean;
+  pauseAvailable?: boolean;
   windows: QuotaWindow[];
   lastCheckedAt: string | null;
   claudeUsage?: ClaudeUsage;
@@ -75,6 +77,7 @@ export type DashboardStatus = {
   claudeUsageRefreshAvailable?: boolean;
   schedulerPlugin?: SchedulerPlugin | null;
   readOnly?: boolean;
+  accountControlAvailable?: boolean;
   policy: {
     mode: string;
     description: string;
