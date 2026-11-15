@@ -1170,6 +1170,12 @@ export function TailnetApp() {
   const [login, setLogin] = useState<Account['provider'] | null>(null);
   const [loginTarget, setLoginTarget] = useState<Account | null>(null);
   const [notice, setNotice] = useState('');
+  // Bumped for every message so a repeated identical message restarts the toast timer.
+  const [noticeId, setNoticeId] = useState(0);
+  const showNotice = (message: string) => {
+    setNotice(message);
+    setNoticeId((id) => id + 1);
+  };
   const inFlight = useRef(false);
   const alive = useRef(true);
   const refresh = useCallback(async () => {
@@ -1210,7 +1216,7 @@ export function TailnetApp() {
         if (result.refreshErrors.length) {
           setUsageError(result.refreshErrors.join(' '));
         } else {
-          setNotice('Usage refreshed.');
+          showNotice('Usage refreshed.');
         }
       }
     } catch (error) {
@@ -1228,7 +1234,7 @@ export function TailnetApp() {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(''), 5000);
     return () => clearTimeout(timer);
-  }, [notice]);
+  }, [notice, noticeId]);
   useEffect(() => {
     alive.current = true;
     void refresh();
@@ -1270,7 +1276,7 @@ export function TailnetApp() {
     snapshotVersion.current += 1;
     if (updated) setStatus(updated);
     setManaging(null);
-    setNotice(message);
+    showNotice(message);
     if (!updated) void refresh();
   };
   const manageButton = (account: Account, className = styles.quietButton) => (
@@ -2235,7 +2241,7 @@ export function TailnetApp() {
           onClose={() => setEditing(null)}
           onSaved={(message) => {
             setEditing(null);
-            setNotice(message || 'Account updated.');
+            showNotice(message || 'Account updated.');
             void refresh();
           }}
         />
@@ -2249,7 +2255,7 @@ export function TailnetApp() {
             setLoginTarget(null);
           }}
           onDone={(result) => {
-            setNotice(result.message);
+            showNotice(result.message);
             void refresh();
           }}
         />

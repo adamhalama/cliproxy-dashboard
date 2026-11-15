@@ -116,6 +116,8 @@ describe('overview layout source contract', () => {
   test('success messages float as a toast that clears itself', () => {
     expect(source).toContain('className={`${styles.successNotice} ${styles.toast}`} role="status"');
     expect(source).toContain("window.setTimeout(() => setNotice(''), 5000)");
+    // A repeated identical message must restart the timer.
+    expect(source).toContain('}, [notice, noticeId]);');
     expect(source).not.toContain('Reported provider limits are shown below.');
   });
 });
