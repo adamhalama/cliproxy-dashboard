@@ -1,4 +1,13 @@
-import type { Account, ClaudeUsageWindow } from './types';
+import {
+  claudeResetCachedNotice,
+  claudeResetFreshness,
+  claudeResetGrantStatus,
+  claudeResetPartial,
+  claudeResetScope,
+  claudeResetsLeft,
+} from './claudeResets';
+import { formatResetExpiry, resetExpiryCountdown } from './resetExpiry';
+import type { Account, ClaudeResetGrant, ClaudeUsageWindow } from './types';
 import styles from './ClaudeUsage.module.scss';
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
@@ -80,6 +89,142 @@ function UsageWindow({ window, now }: { window: ClaudeUsageWindow; now: number }
   );
 }
 
+const counts = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
+function GrantTime({ label, value, now }: { label: string; value: string | null; now: number }) {
+  if (!value) return null;
+  const at = Date.parse(value);
+  return (
+    <span>
+      {label} <time dateTime={value}>{formatResetExpiry(at)}</time>
+      {at > now && ` (${resetExpiryCountdown(at, now).replace(/^Expires /, '')})`}
+    </span>
+  );
+}
+
+function ResetGrant({
+  grant,
+  index,
+  eligible,
+  atLimit,
+  freshness,
+  windows,
+  now,
+}: {
+  grant: ClaudeResetGrant;
+  index: number;
+  eligible: boolean;
+  atLimit: boolean;
+  freshness: ReturnType<typeof claudeResetFreshness>;
+  windows: ClaudeUsageWindow[];
+  now: number;
+}) {
+  const status = claudeResetGrantStatus(grant, eligible, freshness, now, atLimit);
+  const label = grant.label || `Limit reset ${index + 1}`;
+  return (
+    <li className={styles.grant}>
+      <div className={styles.windowHeading}>
+        <h5>{label}</h5>
+        <strong>
+          {counts.format(grant.remaining)} of {counts.format(grant.total)} left
+        </strong>
+      </div>
+      <p className={styles.scope}>
+        {grant.clears.length ? (
+          <>
+            Clears{' '}
+            {grant.clears.map((key, position) => {
+              const scope = claudeResetScope(key, windows);
+              return (
+                <span key={key}>
+                  {position > 0 && ', '}
+                  {scope ?? <code title="Provider limit key">{key}</code>}
+                </span>
+              );
+            })}
+            {claudeResetPartial(grant) && <>; does not reset the full weekly limit</>}
+          </>
+        ) : (
+          'Limits cleared not reported'
+        )}
+      </p>
+      <div className={styles.windowMeta}>
+        <span
+          className={
+            status.tone === 'warning'
+              ? styles.warning
+              : status.tone === 'ready'
+                ? styles.ready
+                : undefined
+          }
+        >
+          {status.text}
+        </span>
+        {grant.startsAt && Date.parse(grant.startsAt) > now && (
+          <GrantTime label="Starts" value={grant.startsAt} now={now} />
+        )}
+        {grant.expiresAt ? (
+          <GrantTime
+            label={Date.parse(grant.expiresAt) <= now ? 'Ended' : 'Expires'}
+            value={grant.expiresAt}
+            now={now}
+          />
+        ) : (
+          <span>Expiry not reported</span>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function LimitResets({ account, now }: { account: Account; now: number }) {
+  const usage = account.claudeUsage!;
+  const resets = usage.manualResets;
+  const freshness = claudeResetFreshness(account, now);
+  return (
+    <div className={styles.resets}>
+      <div className={styles.extraHeading}>
+        <h4>Limit resets</h4>
+        <span>
+          {!resets
+            ? 'Not reported'
+            : `${counts.format(claudeResetsLeft(resets.grants, now))} left${resets.eligible ? '' : ' · account not eligible'}`}
+        </span>
+      </div>
+      {resets && freshness !== 'fresh' && freshness !== 'unreported' && (
+        <p className={styles.warning}>{claudeResetCachedNotice[freshness]}</p>
+      )}
+      {resets ? (
+        resets.grants.length ? (
+          <ul className={styles.grants}>
+            {resets.grants.map((grant, index) => (
+              <ResetGrant
+                key={grant.id}
+                grant={grant}
+                index={index}
+                eligible={resets.eligible}
+                atLimit={resets.atLimit}
+                freshness={freshness}
+                windows={usage.windows}
+                now={now}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className={styles.empty}>No reset grants reported.</p>
+        )
+      ) : (
+        <p className={styles.empty}>
+          {resets === null
+            ? 'Reset grant details were missing or unreadable in the latest saved check.'
+            : 'The server collector does not report reset grants yet.'}
+        </p>
+      )}
+      <p className={styles.note}>Read-only. Viewing never uses a reset.</p>
+    </div>
+  );
+}
+
 export function ClaudeUsage({ account, now }: { account: Account; now: number }) {
   const usage = account.claudeUsage;
   const checked = dateLabel(usage?.checkedAt ?? null);
@@ -128,6 +273,7 @@ export function ClaudeUsage({ account, now }: { account: Account; now: number })
           ) : (
             <p className={styles.empty}>No usage windows reported.</p>
           )}
+          <LimitResets account={account} now={now} />
           <div className={styles.extra}>
             <div className={styles.extraHeading}>
               <h4>Extra usage</h4>
