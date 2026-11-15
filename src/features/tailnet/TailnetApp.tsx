@@ -422,7 +422,8 @@ export function Summary({
   now: number;
 }) {
   const kind = provider === 'claude' ? 'five_hour' : 'weekly';
-  const windows = accounts.map((account) => ({
+  const activeAccounts = accounts.filter((account) => !account.paused);
+  const windows = activeAccounts.map((account) => ({
     account,
     window: accountWindow(account, kind),
   }));
@@ -437,7 +438,9 @@ export function Summary({
   const stale = windows.filter(
     (item) => !item.account.blocked && quotaState(item.window, now) === 'stale'
   ).length;
-  const resetAccounts = accounts.filter((account) => manualResetState(account, now) === 'fresh');
+  const resetAccounts = activeAccounts.filter(
+    (account) => manualResetState(account, now) === 'fresh'
+  );
   const resetCount = resetAccounts.reduce(
     (total, account) => total + account.codexUsage!.manualResets!.availableCount!,
     0
@@ -482,8 +485,11 @@ export function Summary({
           ? `Next reset ${timeUntil(new Date(resets[0]).toISOString(), now).replace('Resets ', '')}`
           : 'No upcoming reset reported'}
         {stale > 0 && <span className={styles.amberText}>{stale} cached / stale</span>}
-        {observed.length < accounts.length && (
-          <span>{accounts.length - observed.length} unavailable</span>
+        {observed.length < activeAccounts.length && (
+          <span>{activeAccounts.length - observed.length} unavailable</span>
+        )}
+        {accounts.length > activeAccounts.length && (
+          <span>{accounts.length - activeAccounts.length} paused</span>
         )}
       </div>
       {provider === 'codex' && (
@@ -492,8 +498,8 @@ export function Summary({
           <strong>
             {resetAccounts.length ? `${resetCounts.format(resetCount)} available` : 'Not reported'}
           </strong>
-          {resetAccounts.length > 0 && resetAccounts.length < accounts.length && (
-            <span>{accounts.length - resetAccounts.length} unavailable</span>
+          {resetAccounts.length > 0 && resetAccounts.length < activeAccounts.length && (
+            <span>{activeAccounts.length - resetAccounts.length} unavailable</span>
           )}
         </div>
       )}
@@ -501,13 +507,14 @@ export function Summary({
   );
 }
 
-function AccountIdentity({ account }: { account: Account }) {
+export function AccountIdentity({ account }: { account: Account }) {
   return (
     <div className={styles.identity}>
       <div className={styles.identityName}>
         <strong title={account.alias || account.maskedIdentity}>
           {account.alias || account.maskedIdentity}
         </strong>
+        {account.paused && <span className={styles.badge}>Paused</span>}
         {account.blocked && <span className={styles.blockedBadge}>Auth blocked</span>}
         {!account.blocked && account.windows.some((window) => window.state === 'RetryWait') && (
           <span
@@ -718,6 +725,70 @@ export function EditAccount({
         </div>
       </form>
     </Modal>
+  );
+}
+
+export function PauseAccountAction({
+  account,
+  readOnly = false,
+  onPending,
+  onChanged,
+}: {
+  account: Account;
+  readOnly?: boolean;
+  onPending: () => void;
+  onChanged: (message: string, status?: DashboardStatus) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const running = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  async function toggle() {
+    if (running.current || readOnly || !account.pauseAvailable) return;
+    running.current = true;
+    setPending(true);
+    setError('');
+    onPending();
+    try {
+      const result = await dashboardApi.setPaused(account.id, !account.paused);
+      onChanged(result.message, result.status);
+    } catch (error) {
+      if (alive.current)
+        setError(error instanceof Error ? error.message : 'Could not change account availability.');
+    } finally {
+      running.current = false;
+      if (alive.current) setPending(false);
+    }
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        className={styles.button}
+        disabled={pending || readOnly || !account.pauseAvailable}
+        onClick={() => void toggle()}
+        aria-label={`${account.paused ? 'Resume' : 'Pause'} ${account.alias || account.maskedIdentity}`}
+        title="Briefly restarts the proxy. Sign-in and account settings are kept."
+      >
+        {pending ? 'Saving…' : account.paused ? 'Resume account' : 'Pause account'}
+      </button>
+      {!account.pauseAvailable && (
+        <p className={styles.fieldHelp}>Account pause is unavailable on this server.</p>
+      )}
+      {account.paused && <p className={styles.fieldHelp}>Brief proxy restart</p>}
+      {readOnly && <p className={styles.fieldHelp}>This preview is read-only.</p>}
+      {error && (
+        <p className={styles.errorText} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -940,6 +1011,8 @@ export function TailnetApp() {
   const [sort, setSort] = useState<Sort>('reset');
   const [search, setSearch] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
+  const [managing, setManaging] = useState<Account | null>(null);
+  const snapshotVersion = useRef(0);
   const [editing, setEditing] = useState<Account | null>(null);
   const [login, setLogin] = useState<Account['provider'] | null>(null);
   const [loginTarget, setLoginTarget] = useState<Account | null>(null);
@@ -950,9 +1023,10 @@ export function TailnetApp() {
     if (inFlight.current) return;
     inFlight.current = true;
     setRefreshing(true);
+    const version = snapshotVersion.current;
     try {
       const result = await dashboardApi.status();
-      if (alive.current) {
+      if (alive.current && version === snapshotVersion.current) {
         setStatus(result);
         setError('');
       }
@@ -975,9 +1049,10 @@ export function TailnetApp() {
     setRefreshingUsage(true);
     setUsageError('');
     setNotice('');
+    const version = snapshotVersion.current;
     try {
       const result = await dashboardApi.refreshUsage(provider);
-      if (alive.current) {
+      if (alive.current && version === snapshotVersion.current) {
         setStatus(result);
         setError('');
         if (result.refreshErrors.length) {
@@ -1031,7 +1106,18 @@ export function TailnetApp() {
     setLoginTarget(account);
     setLogin(account.provider);
   }
-  const blocked = accounts.filter((account) => account.blocked);
+  const pausePending = () => {
+    snapshotVersion.current += 1;
+  };
+  const pauseChanged = (message: string, updated?: DashboardStatus) => {
+    if (!alive.current) return;
+    snapshotVersion.current += 1;
+    if (updated) setStatus(updated);
+    setManaging(null);
+    setNotice(message);
+    if (!updated) void refresh();
+  };
+  const blocked = accounts.filter((account) => account.blocked && !account.paused);
   const codexVisible =
     provider !== 'claude' && accounts.some((account) => account.provider === 'codex');
   const claudeVisible =
@@ -1075,7 +1161,7 @@ export function TailnetApp() {
   }
   const visibleAccounts = [...filtered].sort(compare);
   const configuredOrder = accounts
-    .filter((account) => account.provider === 'codex')
+    .filter((account) => account.provider === 'codex' && !account.paused)
     .sort(
       (a, b) =>
         b.priority - a.priority ||
@@ -1168,7 +1254,7 @@ export function TailnetApp() {
               {group.map((account) => (
                 <Fragment key={account.id}>
                   <article
-                    className={`${styles.ledgerRow} ${account.blocked ? styles.blockedRow : ''}`}
+                    className={`${styles.ledgerRow} ${account.blocked ? styles.blockedRow : ''} ${account.paused ? styles.pausedRow : ''}`}
                   >
                     <div>
                       <AccountIdentity account={account} />
@@ -1217,26 +1303,32 @@ export function TailnetApp() {
                       <span>Priority</span>
                       <strong>{account.provider === 'codex' ? account.priority : '—'}</strong>
                       <small>
-                        {account.provider === 'claude'
-                          ? 'Not applicable'
-                          : account.inRoster
-                            ? 'In rotation'
-                            : 'Outside roster'}
+                        {account.paused
+                          ? 'Paused'
+                          : account.provider === 'claude'
+                            ? 'Not applicable'
+                            : account.inRoster
+                              ? 'In rotation'
+                              : 'Outside roster'}
                       </small>
                     </div>
                     <button
                       type="button"
                       className={styles.quietButton}
-                      onClick={() =>
-                        account.blocked || account.provider === 'claude'
-                          ? reconnect(account)
-                          : setEditing(account)
-                      }
-                      aria-label={`${account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'} ${account.alias || account.maskedIdentity}`}
+                      onClick={() => setManaging(account)}
+                      aria-label={`Manage ${account.alias || account.maskedIdentity}`}
                     >
-                      {account.blocked || account.provider === 'claude' ? 'Reconnect' : 'Manage'}
+                      Manage
                       <Icon name="chevron" />
                     </button>
+                    {account.paused && (
+                      <PauseAccountAction
+                        account={account}
+                        readOnly={status?.readOnly}
+                        onPending={pausePending}
+                        onChanged={pauseChanged}
+                      />
+                    )}
                     {account.provider === 'codex' && (
                       <ManualResetExpirations account={account} now={now} />
                     )}
@@ -1643,18 +1735,23 @@ export function TailnetApp() {
                   </div>
                   <div className={styles.accountList}>
                     {accounts.map((account) => (
-                      <article key={account.id} className={styles.accountCard}>
+                      <article
+                        key={account.id}
+                        className={`${styles.accountCard} ${account.paused ? styles.pausedRow : ''}`}
+                      >
                         <div className={styles.accountProvider}>
                           <ProviderIcon provider={account.provider} />
                         </div>
                         <AccountIdentity account={account} />
                         <div className={styles.accountStatus}>
                           <span className={account.blocked ? styles.blockedBadge : styles.badge}>
-                            {account.blocked
-                              ? 'Sign-in required'
-                              : account.inRoster
-                                ? 'In rotation'
-                                : 'Outside roster'}
+                            {account.paused
+                              ? 'Paused'
+                              : account.blocked
+                                ? 'Sign-in required'
+                                : account.inRoster
+                                  ? 'In rotation'
+                                  : 'Outside roster'}
                           </span>
                           <small>
                             {account.provider === 'codex'
@@ -1663,23 +1760,22 @@ export function TailnetApp() {
                           </small>
                         </div>
                         <div className={styles.actionRow}>
-                          {account.provider === 'codex' && (
-                            <button
-                              type="button"
-                              className={styles.button}
-                              onClick={() => setEditing(account)}
-                              aria-label={`Edit ${account.alias || account.maskedIdentity}`}
-                            >
-                              Edit
-                            </button>
-                          )}
                           <button
                             type="button"
                             className={styles.button}
-                            onClick={() => reconnect(account)}
+                            onClick={() => setManaging(account)}
+                            aria-label={`Manage ${account.alias || account.maskedIdentity}`}
                           >
-                            Reconnect
+                            Manage
                           </button>
+                          {account.paused && (
+                            <PauseAccountAction
+                              account={account}
+                              readOnly={status?.readOnly}
+                              onPending={pausePending}
+                              onChanged={pauseChanged}
+                            />
+                          )}
                         </div>
                       </article>
                     ))}
@@ -1881,6 +1977,47 @@ export function TailnetApp() {
           </footer>
         </main>
       </div>
+      {managing && (
+        <Modal title="Manage account" onClose={() => setManaging(null)}>
+          <AccountIdentity account={managing} />
+          <p className={styles.fieldHelp}>
+            Paused accounts receive no new requests and are excluded from available capacity. Resume
+            anytime. Sign-in, priority, and reserve settings are kept. Pausing or resuming briefly
+            restarts the proxy.
+          </p>
+          <div className={styles.modalActions}>
+            <PauseAccountAction
+              account={managing}
+              readOnly={status?.readOnly}
+              onPending={pausePending}
+              onChanged={pauseChanged}
+            />
+            {managing.provider === 'codex' && (
+              <button
+                type="button"
+                className={styles.button}
+                onClick={() => {
+                  setEditing(managing);
+                  setManaging(null);
+                }}
+              >
+                Edit settings
+              </button>
+            )}
+            <button
+              type="button"
+              className={styles.button}
+              disabled={status?.readOnly}
+              onClick={() => {
+                reconnect(managing);
+                setManaging(null);
+              }}
+            >
+              Reconnect
+            </button>
+          </div>
+        </Modal>
+      )}
       {editing && (
         <EditAccount
           account={editing}

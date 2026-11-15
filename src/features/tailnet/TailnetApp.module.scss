@@ -682,6 +682,22 @@
     justify-self: end;
   }
 }
+.pausedRow {
+  color: #a5a2b4;
+  background: #17161e;
+  .identityName > strong {
+    color: #a5a2b4;
+  }
+  .quotaMeter,
+  .accountProvider {
+    filter: grayscale(1);
+    opacity: 0.55;
+  }
+  > div:has(> .button) {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
 .blockedRow {
   .identityName > strong {
     color: #bebcd5;

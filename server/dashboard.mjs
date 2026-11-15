@@ -77,7 +77,7 @@ function dashboardStatus(data) {
     policy: {
       mode: 'Fill first',
       description:
-        'Codex prefers higher-priority accounts, ordered within the same priority by earliest weekly reset. The saved policy uses Plus and Team at priority 100, with the weekly-only Pro Lite seat at priority 0 as overflow. An account with a five-hour reserve stops serving once only that share of its five-hour window is left, until the window resets. See account rows for current settings. Auth-blocked accounts are unavailable.',
+        'Codex prefers higher-priority accounts, ordered within the same priority by earliest weekly reset. The saved policy uses Plus and Team at priority 100, with the weekly-only Pro Lite seat at priority 0 as overflow. An account with a five-hour reserve stops serving once only that share of its five-hour window is left, until the window resets. See account rows for current settings. Paused and auth-blocked accounts are unavailable.',
       resetProbing: true,
     },
   };
@@ -189,16 +189,17 @@ export async function handler(req, res) {
     return respond(res, 403, { error: 'Cross-origin actions are blocked.' });
   if (!validToken(req.headers['x-dashboard-token']))
     return respond(res, 403, { error: 'Reload the dashboard before saving changes.' });
-  if (mutationActive || Date.now() < nextMutationAt)
-    return respond(res, 429, {
-      error: 'Another action is in progress. Wait a few seconds and try again.',
-    });
   let body;
   try {
     body = await jsonBody(req);
   } catch {
     return respond(res, 400, { error: 'Invalid or oversized JSON request.' });
   }
+  // Claim the mutation slot after reading the body, with no await between check and claim.
+  if (mutationActive || Date.now() < nextMutationAt)
+    return respond(res, 429, {
+      error: 'Another action is in progress. Wait a few seconds and try again.',
+    });
   mutationActive = true;
   nextMutationAt = Date.now() + 3000;
   try {
@@ -253,6 +254,38 @@ export async function handler(req, res) {
       await helper('claude-usage-refresh');
       return respond(res, 200, dashboardStatus((await getStatus(true)).data));
     }
+    if (url.pathname === '/api/accounts/paused') {
+      if (typeof body.id !== 'string' || typeof body.paused !== 'boolean')
+        return respond(res, 400, { error: 'Choose an account and a boolean paused value.' });
+      // Re-read immediately before writing: account membership and helper capabilities can change.
+      const status = await getStatus(true);
+      if (!status.data.accountControlAvailable)
+        return respond(res, 409, { error: 'Account pause is unavailable on this server.' });
+      const filename = status.pauseFiles.get(body.id);
+      const account = status.data.accounts.find((entry) => entry.id === body.id);
+      if (!filename || !account?.pauseAvailable)
+        return respond(res, 409, {
+          error: 'This account is no longer available. Refresh accounts.',
+        });
+      if (account.paused === body.paused)
+        return respond(res, 200, {
+          message: body.paused ? 'Account is already paused.' : 'Account is already resumed.',
+        });
+      await helper('set-paused', filename, String(body.paused));
+      snapshot = null;
+      const updated = (await getStatus(true)).data;
+      const confirmed = updated.accounts.find((entry) => entry.id === body.id);
+      if (!confirmed?.pauseAvailable || confirmed.paused !== body.paused)
+        return respond(res, 503, {
+          error: 'The account change could not be confirmed. Refresh accounts before trying again.',
+        });
+      return respond(res, 200, {
+        message: body.paused
+          ? 'Account paused. The proxy has restarted.'
+          : 'Account resumed. The proxy has restarted.',
+        status: dashboardStatus(updated),
+      });
+    }
     if (url.pathname === '/api/accounts/priority') {
       const status = await getStatus();
       const filename = status.authFiles.get(body.id);
@@ -261,6 +294,7 @@ export async function handler(req, res) {
       if (
         !filename ||
         !account ||
+        account.provider !== 'codex' ||
         !Number.isInteger(body.priority) ||
         Math.abs(body.priority) > 999999 ||
         typeof body.alias !== 'string' ||

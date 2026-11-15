@@ -22,6 +22,7 @@ The `/v1/` bridge forwards streaming requests to the loopback proxy and authenti
 - Reads the existing scheduler and Claude timer through the installed `cliproxy-quota status` helper.
 - Supports deliberate Codex device sign-in and Claude reauthentication with a callback paste step.
 - Reconnect checks the selected account, refreshes scheduler status after sign-in, and keeps the result visible. Saved credentials, pending verification, authentication blocks, and quota wake-up retries have distinct feedback.
+- Manage any Codex or Claude account to pause new requests, then resume from its gray row. Pausing preserves sign-in, priority, and reserves, and removes the account from capacity totals and configured routing order. The action briefly restarts the proxy and requires an installed helper that reports account-control support.
 - Reviews alias/priority changes before saving. A save invokes the installed helper and briefly restarts the proxy.
 - Offers a token-free tailnet API on 8318 while preserving the existing HTTPS 8443 gateway and T3 on HTTPS 443.
 
@@ -60,9 +61,29 @@ curl http://127.0.0.1:8318/api/health
 
 Configuration defaults in `deploy/cliproxy-dashboard.service` target this Lenovo. Adjust `DASHBOARD_TAILNET_IP`, `DASHBOARD_TAILNET_HOST`, `DASHBOARD_OWNER`, and `DASHBOARD_PORT` for another node. No access tokens or credentials go in the service or repository. The API bridge reuses `/home/agent/.config/easycli/token-helper` on the server; adapt that path for another account. The server enforces its hostname allowlist, checks peer identity, and blocks cross-origin writes. Dashboard settings actions use an automatic in-memory CSRF token; this is not a password or client API requirement. Sign-in URLs/codes are shown only after a user action; callback URLs are never logged or stored by the adapter.
 
+## Live-account preview
+
+On the Lenovo, build the tailnet page and install a separate preview listener:
+
+```sh
+bun run build:tailnet
+bash deploy/install-preview-service.sh 8324
+```
+
+Open **http://t450-server.tail8f1c78.ts.net:8324/#quota** as the Tailscale owner.
+This preview controls the live accounts: pause/resume briefly restarts the proxy.
+It uses the same installed helper and leaves the main dashboard listener on 8318.
+To remove the preview:
+
+```sh
+systemctl --user disable --now cliproxy-dashboard-preview-8324.service
+rm ~/.config/systemd/user/cliproxy-dashboard-preview-8324.service
+systemctl --user daemon-reload
+```
+
 ## Verification and rollback
 
-Adapter and HTTP-boundary regressions are in `tests/tailnetDashboard.test.ts`; the upstream tests remain available. Browser validation should cover quota filters, account search, read-only connection details, login dialogs, priority review/cancel, and mobile layout. Do not start OAuth flows or write priorities as a routine UI test.
+Adapter and HTTP-boundary regressions are in `tests/tailnetDashboard.test.ts`; the upstream tests remain available. Browser validation should cover quota filters, account search, read-only connection details, login dialogs, priority review/cancel, pause/resume availability, and mobile layout. Pause tests use a disposable helper stub; real account changes require an explicit click. Do not start OAuth flows or write priorities as a routine UI test.
 
 ```sh
 python3 deploy/verify-api.py          # token-free model list and origin boundary
